@@ -123,7 +123,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
         if eva_termination(valid_aucs):
-            early_stop_index = epoch_i
+            early_stop_index = epoch_i - 5
             break
         print('epoch:', epoch_i, 'validation: auc', auc)
 
