@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import tqdm
 import argparse
+import random
 from sklearn.metrics import roc_auc_score
 import src.models.model as Model
 import src.models.creat_data as Data
@@ -9,6 +10,13 @@ import src.models.creat_data as Data
 import torch
 import torch.nn as nn
 import torch.utils.data
+
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
 
 def get_model(model_name, feature_nums, field_nums, latent_dims):
     if model_name == 'LR':
@@ -73,7 +81,7 @@ def train(model, optimizer, data_loader, loss, device, log_interval = 1000):
         optimizer.step()
         total_loss += train_loss.item()
         if (i + 1) % log_interval == 0:
-            print('average loss: {}'.format(total_loss / log_interval))
+            print('\ntraining average loss: {}'.format(total_loss / log_interval))
             total_loss = 0
 
 def test(model, data_loader, device):
@@ -105,12 +113,30 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     loss = nn.BCELoss()
     optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
+    valid_aucs = []
+    model_parameter_dicts = {}
+    early_stop_index = 0
     for epoch_i in range(epoch):
         train(model, optimizer, train_data_loader, loss, device)
+        model_parameter_dicts.setdefault(epoch_i, model.state_dict()) # 存储参数
+
         auc = test(model, valid_data_loader, device)
+        valid_aucs.append(auc)
+        if eva_termination(valid_aucs):
+            early_stop_index = epoch_i
+            break
         print('epoch:', epoch_i, 'validation: auc', auc)
+
+    model = model.load_state_dict(model_parameter_dicts[early_stop_index]) # 加载最优参数
     auc = test(model, test_data_loader, device)
-    print('test auc:', auc)
+    print('\ntest auc:', auc)
+
+def eva_termination(valid_aucs):
+    if len(valid_aucs) > 5:
+        if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[-4] and valid_aucs[-4] < valid_aucs[-5]:
+            return True
+
+    return False
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -128,6 +154,10 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='cpu:0')
 
     args = parser.parse_args()
+
+    # 设置随机数种子
+    setup_seed(1)
+
     main(
         args.data_path,
         args.dataset_name,
