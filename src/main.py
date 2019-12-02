@@ -85,7 +85,7 @@ def train(model, optimizer, data_loader, loss, device):
 
         log_intervals += 1
 
-    print('\ntraining average loss: {}'.format(total_loss / log_intervals))
+    return total_loss / log_intervals
 
 def test(model, data_loader, device):
     model.eval()
@@ -122,7 +122,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     early_stop_index = 0
     is_early_stop = False
     for epoch_i in range(epoch):
-        train(model, optimizer, train_data_loader, loss, device)
+        train_average_loss = train(model, optimizer, train_data_loader, loss, device)
 
         torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
 
@@ -132,7 +132,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
             break
-        print('epoch:', epoch_i, 'validation: auc', auc)
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc)
 
     if is_early_stop:
         test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
@@ -144,7 +144,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     auc = test(test_model, test_data_loader, device)
     print('\ntest auc:', auc)
 
-def eva_stopping(valid_aucs):
+def eva_stopping(valid_aucs): # early stopping
     if len(valid_aucs) > 5:
         if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[-4] and valid_aucs[-4] < valid_aucs[-5]:
             return True
