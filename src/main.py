@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import tqdm
-import copy
 import os
 import argparse
 import random
@@ -100,7 +99,7 @@ def test(model, data_loader, device):
     return roc_auc_score(targets, predicts)
 
 def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate, weight_decay, batch_size, device, save_param_dir):
-    if os.path.exists(save_param_dir):
+    if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
     device = torch.device(device) # 指定运行设备
@@ -125,7 +124,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     for epoch_i in range(epoch):
         train(model, optimizer, train_data_loader, loss, device)
 
-        torch.save(copy.deepcopy(model.state_dict()), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
+        torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
 
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
