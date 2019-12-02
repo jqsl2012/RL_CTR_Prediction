@@ -81,7 +81,7 @@ def train(model, optimizer, data_loader, loss, device):
         model.zero_grad()
         train_loss.backward()
         optimizer.step()
-        total_loss += train_loss.item()
+        total_loss += train_loss.item() # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
 
         log_intervals += 1
 
@@ -122,6 +122,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     early_stop_index = 0
     is_early_stop = False
     for epoch_i in range(epoch):
+        torch.cuda.empty_cache() # 清理无用的cuda中间变量缓存
+
         train_average_loss = train(model, optimizer, train_data_loader, loss, device)
 
         torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
