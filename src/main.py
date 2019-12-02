@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import tqdm
+import copy
 import os
 import argparse
 import random
@@ -124,11 +125,11 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     for epoch_i in range(epoch):
         train(model, optimizer, train_data_loader, loss, device)
 
-        torch.save(model, save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
+        torch.save(copy.deepcopy(model.state_dict()), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
 
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
-        if eva_termination(valid_aucs):
+        if eva_stopping(valid_aucs):
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
             break
@@ -144,7 +145,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     auc = test(test_model, test_data_loader, device)
     print('\ntest auc:', auc)
 
-def eva_termination(valid_aucs):
+def eva_stopping(valid_aucs):
     if len(valid_aucs) > 5:
         if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[-4] and valid_aucs[-4] < valid_aucs[-5]:
             return True
@@ -165,7 +166,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cpu:0')
-    parser.add_argument('--save_param_dir', default='model_params')
+    parser.add_argument('--save_param_dir', default='model_params/')
 
     args = parser.parse_args()
 
