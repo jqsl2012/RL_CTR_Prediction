@@ -16,7 +16,7 @@ class LR(nn.Module):
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        out = self.bias + torch.sum(self.linear(x), dim=1, keepdim=True)
+        out = self.bias + torch.sum(self.linear(x), dim=1)
         pctrs = torch.sigmoid(out)
 
         return pctrs

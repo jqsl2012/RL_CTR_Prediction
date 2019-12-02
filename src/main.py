@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import tqdm
+import os
 import argparse
 import random
 from sklearn.metrics import roc_auc_score
@@ -68,10 +69,11 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
 
     return train_data, valid_data, test_data, field_nums, feature_nums
     
-def train(model, optimizer, data_loader, loss, device, log_interval = 1000):
+def train(model, optimizer, data_loader, loss, device):
     model.train() # 转换为训练模式
     total_loss = 0
-    for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing = 0, mininterval = 1.0)):
+    log_intervals = 0
+    for i, (features, labels) in enumerate(data_loader):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
         y = model(features)
         train_loss = loss(y, labels.float())
@@ -80,24 +82,27 @@ def train(model, optimizer, data_loader, loss, device, log_interval = 1000):
         train_loss.backward()
         optimizer.step()
         total_loss += train_loss.item()
-        if (i + 1) % log_interval == 0:
-            print('\ntraining average loss: {}'.format(total_loss / log_interval))
-            total_loss = 0
+
+        log_intervals += 1
+
+    print('\ntraining average loss: {}'.format(total_loss / log_intervals))
 
 def test(model, data_loader, device):
     model.eval()
     targets, predicts = list(), list()
     with torch.no_grad():
-        for features, labels in tqdm.tqdm(data_loader, smoothing = 0, mininterval = 1.0):
+        for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             y = model(features)
             targets.extend(labels.tolist()) # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
     return roc_auc_score(targets, predicts)
 
-def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate, weight_decay, batch_size, device):
-    device = torch.device(device) # 指定运行设备
+def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate, weight_decay, batch_size, device, save_param_dir):
+    if os.path.exists(save_param_dir):
+        os.mkdir(save_param_dir)
 
+    device = torch.device(device) # 指定运行设备
     train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id, valid_day, test_day)
 
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
@@ -114,21 +119,29 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     valid_aucs = []
-    model_parameter_dicts = {}
     early_stop_index = 0
+    is_early_stop = False
     for epoch_i in range(epoch):
         train(model, optimizer, train_data_loader, loss, device)
-        model_parameter_dicts.setdefault(epoch_i, model.state_dict()) # 存储参数
+
+        torch.save(model, save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
 
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
         if eva_termination(valid_aucs):
-            early_stop_index = epoch_i - 5
+            early_stop_index = np.mod(epoch_i - 4, 5)
+            is_early_stop = True
             break
         print('epoch:', epoch_i, 'validation: auc', auc)
 
-    model = model.load_state_dict(model_parameter_dicts[early_stop_index]) # 加载最优参数
-    auc = test(model, test_data_loader, device)
+    if is_early_stop:
+        test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
+        load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+        test_model = test_model.load_state_dict(torch.load(load_path))  # 加载最优参数
+    else:
+        test_model = model
+
+    auc = test(test_model, test_data_loader, device)
     print('\ntest auc:', auc)
 
 def eva_termination(valid_aucs):
@@ -152,6 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cpu:0')
+    parser.add_argument('--save_param_dir', default='model_params')
 
     args = parser.parse_args()
 
@@ -170,4 +184,6 @@ if __name__ == '__main__':
         args.learning_rate,
         args.weight_decay,
         args.batch_size,
-        args.device)
+        args.device,
+        args.save_param_dir
+    )
