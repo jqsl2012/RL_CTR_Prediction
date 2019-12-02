@@ -12,6 +12,7 @@ import src.models.creat_data as Data
 import torch
 import torch.nn as nn
 import torch.utils.data
+torch.backends.cudnn.benchmark = True
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -127,6 +128,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     for epoch_i in range(epoch):
         torch.cuda.empty_cache() # 清理无用的cuda中间变量缓存
 
+        train_start_time = datetime.datetime.now()
+
         train_average_loss = train(model, optimizer, train_data_loader, loss, device)
 
         torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
@@ -137,15 +140,17 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
             break
+
+        train_end_time = datetime.datetime.now()
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc,
-              '[{}s]'.format((datetime.datetime.now() - start_time).seconds))
+              '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     end_time = datetime.datetime.now()
 
     if is_early_stop:
         test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
         load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
-        test_model = test_model.load_state_dict(torch.load(load_path))  # 加载最优参数
+        test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
     else:
         test_model = model
 
