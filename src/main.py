@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import tqdm
+import datetime
 import os
 import argparse
 import random
@@ -121,6 +122,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     valid_aucs = []
     early_stop_index = 0
     is_early_stop = False
+
+    start_time = datetime.datetime.now()
     for epoch_i in range(epoch):
         torch.cuda.empty_cache() # 清理无用的cuda中间变量缓存
 
@@ -134,7 +137,10 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
             break
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc)
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc,
+              '[{}s]'.format((datetime.datetime.now() - start_time).seconds))
+
+    end_time = datetime.datetime.now()
 
     if is_early_stop:
         test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
@@ -144,7 +150,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         test_model = model
 
     auc = test(test_model, test_data_loader, device)
-    print('\ntest auc:', auc)
+    print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
 def eva_stopping(valid_aucs): # early stopping
     if len(valid_aucs) > 5:
