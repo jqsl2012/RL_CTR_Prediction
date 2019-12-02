@@ -12,7 +12,6 @@ import src.models.creat_data as Data
 import torch
 import torch.nn as nn
 import torch.utils.data
-torch.backends.cudnn.benchmark = True
 
 def setup_seed(seed):
     torch.manual_seed(seed)
