@@ -68,7 +68,7 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     test_index_end = test_day_index[0, 2] + 1
     test_data = train_fm[test_index_start: test_index_end, :]
 
-    return train_fm, train_data, valid_data, test_data, field_nums, feature_nums
+    return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
     
 def train(model, optimizer, data_loader, loss, device):
     model.train() # 转换为训练模式
@@ -104,7 +104,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         os.mkdir(save_param_dir)
 
     device = torch.device(device) # 指定运行设备
-    train_fm, train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id, valid_day, test_day)
+    train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id, valid_day, test_day)
 
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
     valid_dataset = Data.libsvm_dataset(valid_data[:, 1:], valid_data[:, 0])
@@ -159,11 +159,10 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
-    submission_path = data_path + dataset_name + campaign_id + 'submission/' # ctr 预测结果存放文件夹位置
+    submission_path = data_path + dataset_name + campaign_id + model_name + '/submission/' # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
 
-    day_indexs = pd.read_csv(data_path + dataset_name + campaign_id + 'day_index.csv', header=None).values
     days = day_indexs[:, 0]  # 数据集中有的日期
 
     day_aucs = []
@@ -183,7 +182,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
             y_pred_df = pd.DataFrame(data=y_pred)
             day_aucs_df = pd.DataFrame(data=day_aucs)
 
-            y_pred_df.to_csv(submission_path + str(day) + '.csv', header=None)
+            y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
             day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
 
