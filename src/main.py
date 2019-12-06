@@ -136,14 +136,14 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
 
-        train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc,
-              '[{}s]'.format((train_end_time - train_start_time).seconds))
-
         if eva_stopping(valid_aucs):
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
             break
+
+        train_end_time = datetime.datetime.now()
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc,
+              '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     end_time = datetime.datetime.now()
 
@@ -196,8 +196,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
+    parser.add_argument('--valid_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
+    parser.add_argument('--test_day', default=6, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='LR', help='LR, FM, FFM')
     parser.add_argument('--latent_dims', default=5)
