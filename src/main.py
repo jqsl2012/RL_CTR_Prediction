@@ -60,6 +60,7 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     valid_day_index = day_indexs[days == valid_day]
     valid_index_start = valid_day_index[0, 1]
     valid_index_end = valid_day_index[0, 2] + 1
+
     valid_data = train_fm[valid_index_start: valid_index_end, :]
 
     # 生成测试集
@@ -131,7 +132,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
         train_average_loss = train(model, optimizer, train_data_loader, loss, device)
 
-        torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i + 1, 5)) + '.pth')
+        torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
@@ -150,6 +151,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     if is_early_stop:
         test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
         load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+
         test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
     else:
         test_model = model
@@ -180,10 +182,17 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
             day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
 
             y_pred_df = pd.DataFrame(data=y_pred)
-            day_aucs_df = pd.DataFrame(data=day_aucs)
 
             y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
-            day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
+
+    with torch.no_grad():
+        train_ctrs = test_model(torch.tensor(train_data[:, 1:]).to(device)).cpu().numpy()
+        train_labels = train_data[:, 0]
+        train_auc = roc_auc_score(train_labels, train_ctrs.flatten())
+
+        day_aucs.append(['train', train_auc])
+        day_aucs_df = pd.DataFrame(data=day_aucs)
+        day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
 def eva_stopping(valid_aucs): # early stopping
     if len(valid_aucs) > 5:
@@ -196,11 +205,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--valid_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--test_day', default=6, help='6, 7, 8, 9, 10, 11, 12')
+    parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
+    parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--model_name', default='LR', help='LR, FM, FFM')
-    parser.add_argument('--latent_dims', default=5)
+    parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
+    parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
