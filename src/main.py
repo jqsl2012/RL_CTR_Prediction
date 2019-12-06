@@ -208,7 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--save_param_dir', default='model/model_params/')
+    parser.add_argument('--save_param_dir', default='models/model_params/')
 
     args = parser.parse_args()
 
