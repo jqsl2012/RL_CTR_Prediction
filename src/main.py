@@ -159,9 +159,11 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
-    submission_path = data_path + dataset_name + campaign_id + model_name + '/submission/' # ctr 预测结果存放文件夹位置
+    submission_path = data_path + dataset_name + campaign_id + model_name # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
+    elif not os.path.exists(submission_path + '/submission/'):
+        os.mkdir(submission_path + '/submission/')
 
     days = day_indexs[:, 0]  # 数据集中有的日期
 
