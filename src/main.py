@@ -159,11 +159,14 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
+    submission_path = data_path + dataset_name + campaign_id + 'submission/' # ctr 预测结果存放文件夹位置
+    if not os.path.exists(submission_path):
+        os.mkdir(submission_path)
+
     day_indexs = pd.read_csv(data_path + dataset_name + campaign_id + 'day_index.csv', header=None).values
     days = day_indexs[:, 0]  # 数据集中有的日期
 
-
-    day_aucs = {}
+    day_aucs = []
     for day in days:
         current_day_index = day_indexs[days == day]
         data_index_start = current_day_index[0, 1]
@@ -175,10 +178,13 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         with torch.no_grad():
             y_pred = test_model(current_data).cpu().numpy()
 
-            day_aucs.setdefault(day, roc_auc_score(y_labels, y_pred.flatten()))
+            day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
 
-            y_pred_
+            y_pred_df = pd.DataFrame(data=y_pred)
+            day_aucs_df = pd.DataFrame(data=day_aucs)
 
+            y_pred_df.to_csv(submission_path + str(day) + '.csv', header=None)
+            day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
 
 def eva_stopping(valid_aucs): # early stopping
@@ -202,7 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--save_param_dir', default='model_params/')
+    parser.add_argument('--save_param_dir', default='model/model_params/')
 
     args = parser.parse_args()
 
