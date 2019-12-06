@@ -159,7 +159,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
-    submission_path = data_path + dataset_name + campaign_id + model_name # ctr 预测结果存放文件夹位置
+    submission_path = data_path + dataset_name + campaign_id + model_name + '/' # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
 
@@ -184,7 +184,6 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
             y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
             day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
-
 
 def eva_stopping(valid_aucs): # early stopping
     if len(valid_aucs) > 5:
