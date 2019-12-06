@@ -1,0 +1,9 @@
+Parameters:
+campaign_id 1458
+latent_dims 5
+epoch 100
+learning_rate 1e-3
+weight_decay 1e-5
+batch_size 2048
+
+AUC: LR-0.8198136424416889 FM-0.8656503091968921 FFM-0.9024218295661991

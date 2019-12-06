@@ -135,14 +135,15 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
         auc = test(model, valid_data_loader, device)
         valid_aucs.append(auc)
-        if eva_stopping(valid_aucs):
-            early_stop_index = np.mod(epoch_i - 4, 5)
-            is_early_stop = True
-            break
 
         train_end_time = datetime.datetime.now()
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc,
               '[{}s]'.format((train_end_time - train_start_time).seconds))
+
+        if eva_stopping(valid_aucs):
+            early_stop_index = np.mod(epoch_i - 4, 5)
+            is_early_stop = True
+            break
 
     end_time = datetime.datetime.now()
 
@@ -154,7 +155,23 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         test_model = model
 
     auc = test(test_model, test_data_loader, device)
+    torch.save(test_model.state_dict(), save_param_dir + model_name + 'best.pth') # 存储最优参数
+
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
+
+    day_indexs = pd.read_csv(data_path + 'data_index.csv', header=None).values
+    days = day_indexs[:, 0]  # 数据集中有的日期
+
+    train_fm = pd.read_csv(data_path + 'train.txt', header=None).values.astype(int)
+
+    for day in days:
+        current_day_index = day_indexs[days == day]
+        data_index_start = current_day_index[0, 1]
+        data_index_end = current_day_index[0, 2] + 1
+
+        current_data = train_fm[data_index_start: data_index_end, :]
+
+        y_pred = test_model(current_data)
 
 def eva_stopping(valid_aucs): # early stopping
     if len(valid_aucs) > 5:

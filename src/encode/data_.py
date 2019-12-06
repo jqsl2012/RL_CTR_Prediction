@@ -8,13 +8,13 @@ import pandas as pd
 
 def data_to_csv(datapath, is_to_csv):
     file_name = 'train.log.txt'
-    data_path = datapath + file_name
+    data_path = datapath
     if is_to_csv:
         print('###### to csv.file ######\n')
         # 训练数据27个特征
         with open(data_path + 'train.csv', 'w', newline='') as csvfile: # newline防止每两行就空一行
             spamwriter = csv.writer(csvfile, dialect='excel') # 读要转换的txt文件，文件每行各词间以@@@字符分隔
-            with open(data_path + 'train.log.txt', 'r') as filein:
+            with open(data_path + file_name, 'r') as filein:
                 for i, line in enumerate(filein):
                     line_list = line.strip('\n').split('\t')
                     spamwriter.writerow(line_list)
@@ -95,8 +95,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--is_to_csv', default=False)
+    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
+    parser.add_argument('--is_to_csv', default=True)
     parser.add_argument('--is_separate_data', default=True)
 
     args = parser.parse_args()
