@@ -68,7 +68,7 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     test_index_end = test_day_index[0, 2] + 1
     test_data = train_fm[test_index_start: test_index_end, :]
 
-    return train_data, valid_data, test_data, field_nums, feature_nums
+    return train_fm, train_data, valid_data, test_data, field_nums, feature_nums
     
 def train(model, optimizer, data_loader, loss, device):
     model.train() # 转换为训练模式
@@ -104,7 +104,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         os.mkdir(save_param_dir)
 
     device = torch.device(device) # 指定运行设备
-    train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id, valid_day, test_day)
+    train_fm, train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id, valid_day, test_day)
 
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
     valid_dataset = Data.libsvm_dataset(valid_data[:, 1:], valid_data[:, 0])
@@ -159,19 +159,27 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
-    day_indexs = pd.read_csv(data_path + 'data_index.csv', header=None).values
+    day_indexs = pd.read_csv(data_path + dataset_name + campaign_id + 'day_index.csv', header=None).values
     days = day_indexs[:, 0]  # 数据集中有的日期
 
-    train_fm = pd.read_csv(data_path + 'train.txt', header=None).values.astype(int)
 
+    day_aucs = {}
     for day in days:
         current_day_index = day_indexs[days == day]
         data_index_start = current_day_index[0, 1]
         data_index_end = current_day_index[0, 2] + 1
 
-        current_data = train_fm[data_index_start: data_index_end, :]
+        current_data = torch.tensor(train_fm[data_index_start: data_index_end, 1:]).to(device)
+        y_labels = train_fm[data_index_start: data_index_end, 0]
 
-        y_pred = test_model(current_data)
+        with torch.no_grad():
+            y_pred = test_model(current_data).cpu().numpy()
+
+            day_aucs.setdefault(day, roc_auc_score(y_labels, y_pred.flatten()))
+
+            y_pred_
+
+
 
 def eva_stopping(valid_aucs): # early stopping
     if len(valid_aucs) > 5:
@@ -187,13 +195,13 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--model_name', default='FM', help='LR, FM, FFM')
+    parser.add_argument('--model_name', default='LR', help='LR, FM, FFM')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--batch_size', type=int, default=2048)
-    parser.add_argument('--device', default='cpu:0')
+    parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='model_params/')
 
     args = parser.parse_args()
