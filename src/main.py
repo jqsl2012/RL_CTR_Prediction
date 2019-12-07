@@ -148,8 +148,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation auc', auc,
-               'validation loss', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation auc:', auc,
+               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
@@ -166,7 +166,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     else:
         test_model = model
 
-    auc = test(test_model, test_data_loader, loss, device)
+    auc, test_loss = test(test_model, test_data_loader, loss, device)
     torch.save(test_model.state_dict(), save_param_dir + model_name + 'best.pth') # 存储最优参数
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
