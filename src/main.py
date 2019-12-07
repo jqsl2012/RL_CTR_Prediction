@@ -89,18 +89,26 @@ def train(model, optimizer, data_loader, loss, device):
 
     return total_loss / log_intervals
 
-def test(model, data_loader, device):
+def test(model, data_loader, loss, device):
     model.eval()
     targets, predicts = list(), list()
+    intervals = 0
+    total_test_loss = 0
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             y = model(features)
+
+            test_loss = loss(y, labels.float())
             targets.extend(labels.tolist()) # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
-    return roc_auc_score(targets, predicts)
+            intervals += 1
+            total_test_loss += test_loss.item()
 
-def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate, weight_decay, batch_size, device, save_param_dir):
+    return roc_auc_score(targets, predicts), total_test_loss / intervals
+
+def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate,
+         weight_decay, early_stop_type, batch_size, device, save_param_dir):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
@@ -121,6 +129,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     valid_aucs = []
+    valid_losses = []
     early_stop_index = 0
     is_early_stop = False
 
@@ -134,14 +143,15 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
         torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
-        auc = test(model, valid_data_loader, device)
+        auc, valid_loss = test(model, valid_data_loader, loss, device)
         valid_aucs.append(auc)
+        valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation: auc', auc,
-              '[{}s]'.format((train_end_time - train_start_time).seconds))
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation auc', auc,
+               'validation loss', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        if eva_stopping(valid_aucs):
+        if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
             break
@@ -156,7 +166,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     else:
         test_model = model
 
-    auc = test(test_model, test_data_loader, device)
+    auc = test(test_model, test_data_loader, loss, device)
     torch.save(test_model.state_dict(), save_param_dir + model_name + 'best.pth') # 存储最优参数
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
@@ -194,10 +204,15 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         day_aucs_df = pd.DataFrame(data=day_aucs)
         day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-def eva_stopping(valid_aucs): # early stopping
-    if len(valid_aucs) > 5:
-        if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[-4] and valid_aucs[-4] < valid_aucs[-5]:
-            return True
+def eva_stopping(valid_aucs, valid_losses, type): # early stopping
+    if type == 'auc':
+        if len(valid_aucs) > 5:
+            if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[-4] and valid_aucs[-4] < valid_aucs[-5]:
+                return True
+    else:
+        if len(valid_losses) > 5:
+            if valid_losses[-1] > valid_losses[-2] and valid_losses[-2] > valid_losses[-3] and valid_losses[-3] > valid_losses[-4] and valid_losses[-4] > valid_losses[-5]:
+                return True
 
     return False
 
@@ -213,6 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
+    parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')
@@ -233,6 +249,7 @@ if __name__ == '__main__':
         args.epoch,
         args.learning_rate,
         args.weight_decay,
+        args.early_stop_type,
         args.batch_size,
         args.device,
         args.save_param_dir
