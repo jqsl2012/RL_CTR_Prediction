@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 
+# 传统的预测点击率模型
+
 class LR(nn.Module):
     def __init__(self,
                  feature_nums,

@@ -14,6 +14,6 @@ class libsvm_dataset(Dataset.Dataset):
     # 得到数据内容和标签
     def __getitem__(self, item):
         data = self.Data[item]
-        lable = self.label[item]
+        label = self.label[item]
 
-        return data, lable
+        return data, label
