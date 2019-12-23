@@ -178,6 +178,9 @@ class DDPG():
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
+    def return_state_dict(self):
+        return
+
     def learn(self):
         if self.memory_counter > self.memory_size:
             # replacement 代表的意思是抽样之后还放不放回去，如果是False的话，那么出来的三个数都不一样，如果是True的话， 有可能会出现重复的，因为前面的抽的放回去了

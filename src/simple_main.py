@@ -69,8 +69,8 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
 
 def reward_functions(y_preds, labels):
-    reward = 1000
-    punishment = -1000
+    reward = 1
+    punishment = -1
 
     with_clk_indexs = np.where(labels == 1)[0]
     without_clk_indexs = np.where(labels == 0)[0]
@@ -161,7 +161,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
 
         train_average_loss = train(model, train_data_loader, device, ou_noise)
 
-        torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(model.Actor.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
         auc, valid_loss = test(model, valid_data_loader, loss, device)
         valid_aucs.append(auc)
@@ -178,16 +178,16 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
 
     end_time = datetime.datetime.now()
 
-    if is_early_stop:
-        test_model = get_model(action_nums, feature_nums, field_nums, latent_dims).to(device)
-        load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+    # if is_early_stop:
+    #     test_model = get_model(action_nums, feature_nums, field_nums, latent_dims)
+    #     load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+    #
+    #     test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
+    # else:
+    #     test_model = model
 
-        test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
-    else:
-        test_model = model
-
-    auc, test_loss = test(test_model, test_data_loader, loss, device)
-    torch.save(test_model.state_dict(), save_param_dir + model_name + 'best.pth')  # 存储最优参数
+    auc, test_loss = test(model, test_data_loader, loss, device)
+    # torch.save(model.state_dict(), save_param_dir + model_name + 'best.pth')  # 存储最优参数
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
@@ -247,7 +247,7 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
+    parser.add_argument('--model_name', default='DDPG', help='LR, FM, FFM')
     parser.add_argument('--action_nums', default=1)
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
