@@ -23,11 +23,29 @@ class Fature_embedding(nn.Module):
         super(Fature_embedding, self).__init__()
         self.field_nums = field_nums
         self.latent_dims = latent_dims
-        self.feature_em = nn.Embedding(feature_numbers, latent_dims)
-        nn.init.xavier_normal_(self.feature_em.weight.data)
+
+        pretrain_params = torch.load('models/model_params/FFMbest.pth')
+
+        self.field_feature_embeddings = nn.ModuleList([
+            nn.Embedding(feature_numbers, latent_dims) for _ in range(field_nums)
+        ])  # 相当于建立一个field_nums * feature_nums * latent_dims的三维矩阵
+        for i, embedding in enumerate(self.field_feature_embeddings):
+            self.field_feature_embeddings[i].weight.data.copy_(
+                torch.from_numpy(
+                    np.array(pretrain_params['field_feature_embeddings.' + str(i) + '.weight'].cpu())
+                )
+            )
 
     def forward(self, x):
-        return self.feature_em(x).view(-1, self.field_nums * self.latent_dims) # m * n矩阵平铺为1 * [m*n]
+        embedding_vectors = torch.FloatTensor()
+        for i, embedding in enumerate(self.field_feature_embeddings):
+            if i == 0:
+                embedding_vectors = embedding(x[:, i])
+            else:
+                embedding_vectors = torch.cat([embedding_vectors, embedding(x[:, i])], dim=1)
+
+        return embedding_vectors
+        # return self.field_feature_embeddings(x).view(-1, self.field_nums * self.latent_dims) # m * n矩阵平铺为1 * [m*n]
 
 class Actor(nn.Module):
     def __init__(self, field_nums, latent_dims, action_nums):
@@ -111,10 +129,10 @@ class DDPG():
             lr_A = 1e-4,
             lr_C = 1e-3,
             reward_decay = 1,
-            memory_size = 100000,
-            batch_size = 2048,
+            memory_size = 5000000,
+            batch_size = 256,
             tau = 0.001, # for target network soft update
-            device = 'cpu:0',
+            device = 'cuda:0',
     ):
         super(DDPG, self).__init__()
         self.feature_nums = feature_nums
@@ -134,7 +152,7 @@ class DDPG():
 
         self.memory = np.zeros((self.memory_size, self.field_nums * self.latent_dims * 2 + self.action_nums + 1))
 
-        self.embedding_layer = Fature_embedding(self.feature_nums, self.field_nums, self.latent_dims)
+        self.embedding_layer = Fature_embedding(self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
 
         self.Actor = Actor(self.field_nums, self.latent_dims, self.action_nums).to(self.device)
         self.Critic = Critic(self.field_nums, self.latent_dims, self.action_nums).to(self.device)
@@ -149,7 +167,7 @@ class DDPG():
         self.loss_func = nn.MSELoss(reduction='mean')
 
     def store_transition(self, transition):
-        transition = transition.detach().numpy()
+        transition = transition.cpu().detach().numpy()
         # 由于已经定义了经验池的memory_size，如果超过此大小，旧的memory则被新的memory替换
         index_start = self.memory_counter % self.memory_size
         index_end = (self.memory_counter + len(transition)) % self.memory_size
@@ -165,7 +183,7 @@ class DDPG():
         self.memory_counter += len(transition)
 
     def choose_action(self, state):
-        state = self.embedding_layer(state).to(self.device)
+        state = self.embedding_layer.forward(state).to(self.device)
 
         self.Actor.eval()
         with torch.no_grad():
@@ -177,9 +195,6 @@ class DDPG():
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
-
-    def return_state_dict(self):
-        return
 
     def learn(self):
         if self.memory_counter > self.memory_size:
@@ -195,14 +210,14 @@ class DDPG():
         b_r = torch.FloatTensor(batch_memory[:, -self.field_nums * self.latent_dims - 1: -self.field_nums * self.latent_dims]).to(self.device)
         b_s_ = torch.FloatTensor(batch_memory[:, -self.field_nums * self.latent_dims:]).to(self.device)
 
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_(b_s_)).to(self.device)
+        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_)).to(self.device)
         q = self.Critic.forward(b_s, b_a).to(self.device)
         td_error = F.smooth_l1_loss(q, q_target.detach())
         self.optimizer_c.zero_grad()
         td_error.backward()
         self.optimizer_c.step()
 
-        a_loss = -self.Critic.forward(b_s, self.Actor(b_s)).mean()
+        a_loss = -self.Critic.forward(b_s, self.Actor.forward(b_s)).mean()
         self.optimizer_a.zero_grad()
         a_loss.backward()
         self.optimizer_a.step()
