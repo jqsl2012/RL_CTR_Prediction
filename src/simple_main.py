@@ -72,8 +72,8 @@ def reward_functions(y_preds, labels, device):
     reward = 1
     punishment = -1
 
-    with_clk_indexs = np.where(labels.cpu() == 1)[0]
-    without_clk_indexs = np.where(labels.cpu() == 0)[0]
+    with_clk_indexs = (labels == 1).nonzero()[:, 0]
+    without_clk_indexs = (labels == 0).nonzero()[:, 0]
 
     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
@@ -87,7 +87,7 @@ def reward_functions(y_preds, labels, device):
     reward_without_clk = torch.where(y_preds[without_clk_indexs] >= 0.5, punishment_for_without_clk, reward_for_without_clk).cpu().numpy()
     reward_with_clk = torch.where(y_preds[with_clk_indexs] >= 0.5, reward_for_with_clk, punishment_for_with_clk).cpu().numpy()
 
-    for i, clk_index in enumerate(with_clk_indexs):
+    for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
         reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
 
     return_reward = torch.FloatTensor(reward_without_clk).view(-1, 1)
@@ -102,11 +102,13 @@ def train(model, data_loader, device, ou_noise_obj):
         ou_noise = torch.FloatTensor(ou_noise_obj()[:len(features)]).view(-1, 1)
 
         states, y_preds = model.choose_action(features) # ctrs
-        y_preds = torch.FloatTensor(np.clip(np.random.normal(y_preds.cpu(), np.abs(ou_noise)), 0, 1)).to(device)
+
+        y_preds = torch.FloatTensor(np.clip(np.random.normal(y_preds, np.abs(ou_noise)), 0, 1)).to(device)
 
         rewards = reward_functions(y_preds, labels, device).to(device)
 
         transitions = torch.cat([states, y_preds, rewards, states], dim=1)
+
         model.store_transition(transitions)
 
         td_error, action_loss = model.learn()
@@ -126,6 +128,7 @@ def test(model, data_loader, loss, device):
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             states, y = model.choose_action(features)
+            y = torch.FloatTensor(y).to(device)
 
             test_loss = loss(y, labels.float())
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
@@ -217,7 +220,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
         y_labels = train_fm[data_index_start: data_index_end, 0]
 
         with torch.no_grad():
-            y_pred = test_model.choose_action(current_data).cpu().numpy()
+            states, y_pred = test_model.choose_action(current_data)
 
             day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
 
@@ -226,7 +229,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
             y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
 
     with torch.no_grad():
-        train_ctrs = test_model.choose_action(torch.tensor(train_data[:, 1:]).to(device)).cpu().numpy()
+        train_states, train_ctrs = test_model.choose_action(torch.tensor(train_data[:, 1:]).to(device))
+
         train_labels = train_data[:, 0]
         train_auc = roc_auc_score(train_labels, train_ctrs.flatten())
 
@@ -264,7 +268,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')
 

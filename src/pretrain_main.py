@@ -115,8 +115,8 @@ def test(model, data_loader, loss, device):
 
 def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate,
          weight_decay, early_stop_type, batch_size, device, save_param_dir):
-    if not os.path.exists(save_param_dir):
-        os.mkdir(save_param_dir)
+    if not os.path.exists(save_param_dir + campaign_id):
+        os.mkdir(save_param_dir + campaign_id)
 
     device = torch.device(device)  # 指定运行设备
     train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path,
@@ -150,7 +150,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
         train_average_loss = train(model, optimizer, train_data_loader, loss, device)
 
-        torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(model.state_dict(), save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
         auc, valid_loss = test(model, valid_data_loader, loss, device)
         valid_aucs.append(auc)
@@ -169,14 +169,14 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     if is_early_stop:
         test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
-        load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+        load_path = save_param_dir + campaign_id + model_name + str(early_stop_index) + '.pth'
 
         test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
     else:
         test_model = model
 
     auc, test_loss = test(test_model, test_data_loader, loss, device)
-    torch.save(test_model.state_dict(), save_param_dir + model_name + 'best.pth')  # 存储最优参数
+    torch.save(test_model.state_dict(), save_param_dir + campaign_id + model_name + 'best.pth')  # 存储最优参数
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
