@@ -113,6 +113,20 @@ def test(model, data_loader, loss, device):
     return roc_auc_score(targets, predicts), total_test_loss / intervals
 
 
+def submission(model, data_loader, device):
+    targets, predicts = list(), list()
+    with torch.no_grad():
+        for features, labels in data_loader:
+            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+            y = model.choose_action(features)
+            y_preds = torch.FloatTensor(y[:, 0].reshape(-1, 1)).to(device)
+
+            targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
+            predicts.extend(y_preds.tolist())
+
+    return predicts, roc_auc_score(targets, predicts)
+
+
 def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate,
          weight_decay, early_stop_type, batch_size, device, save_param_dir):
     if not os.path.exists(save_param_dir + campaign_id):
@@ -184,29 +198,21 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
 
-    days = day_indexs[:, 0]  # 数据集中有的日期
+    # 验证集submission
+    valid_predicts, valid_auc = submission(test_model, valid_data_loader, device)
+    valid_pred_df = pd.DataFrame(data=valid_predicts)
 
-    day_aucs = []
-    for day in days:
-        current_day_index = day_indexs[days == day]
-        data_index_start = current_day_index[0, 1]
-        data_index_end = current_day_index[0, 2] + 1
+    valid_pred_df.to_csv(submission_path + str(valid_day) + '_test_submission.csv', header=None)
 
-        current_data = torch.tensor(train_fm[data_index_start: data_index_end, 1:]).to(device)
-        y_labels = train_fm[data_index_start: data_index_end, 0]
+    # 测试集submission
+    test_predicts, test_auc = submission(test_model, test_data_loader, device)
+    test_pred_df = pd.DataFrame(data=test_predicts)
 
-        with torch.no_grad():
-            y_pred = test_model(current_data).cpu().numpy()
+    test_pred_df.to_csv(submission_path + str(test_day) + '_test_submission.csv', header=None)
 
-            day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
-
-            y_pred_df = pd.DataFrame(data=y_pred)
-
-            y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
-
-    with torch.no_grad():
-        day_aucs_df = pd.DataFrame(data=day_aucs)
-        day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
+    day_aucs = [[valid_day, valid_auc], [test_day, test_auc]]
+    day_aucs_df = pd.DataFrame(data=day_aucs)
+    day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
 
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
@@ -230,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
     parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)

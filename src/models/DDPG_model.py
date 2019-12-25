@@ -13,12 +13,14 @@ def setup_seed(seed):
 # 设置随机数种子
 setup_seed(1)
 
-neural_nums_a_1 = 1000
-neural_nums_a_2 = 800
-neural_nums_a_3 = 600
-neural_nums_c_1 = 1000
-neural_nums_c_2 = 800
-neural_nums_c_3 = 600
+neural_nums_a_1 = 1024
+neural_nums_a_2 = 512
+neural_nums_a_3 = 256
+neural_nums_a_4 = 128
+neural_nums_c_1 = 1024
+neural_nums_c_2 = 512
+neural_nums_c_3 = 256
+neural_nums_c_4 = 128
 
 class Fature_embedding(nn.Module):
     def __init__(self, feature_numbers, field_nums, latent_dims, campaign_id):
@@ -69,16 +71,26 @@ class Actor(nn.Module):
         self.fc1 = nn.Linear(input_dims, neural_nums_a_1)
         self.fc2 = nn.Linear(neural_nums_a_1, neural_nums_a_2)
         self.fc3 = nn.Linear(neural_nums_a_2, neural_nums_a_3)
-        self.out = nn.Linear(neural_nums_a_3, action_numbers)
+        self.fc4 = nn.Linear(neural_nums_a_3, neural_nums_a_4)
+        self.out = nn.Linear(neural_nums_a_4, action_numbers)
+
+        self.dp = nn.Dropout(0.5)
+
 
     def forward(self, input):
         x = F.relu(self.fc1(input))
-        F.dropout(x, p=0.2)
+        x = self.dp(x)
+
         x_ = F.relu(self.fc2(x))
-        F.dropout(x_, p=0.2)
+        x_ = self.dp(x_)
+
         x_1 = F.relu(self.fc3(x_))
-        F.dropout(x_1, p=0.2)
-        out = torch.sigmoid(self.out(x_1))
+        x_1 = self.dp(x_1)
+
+        x_2 = F.relu(self.fc4(x_1))
+        x_2 = self.dp(x_2)
+
+        out = torch.sigmoid(self.out(x_2))
 
         return out
 
@@ -86,21 +98,30 @@ class Critic(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Critic, self).__init__()
         self.fc_s = nn.Linear(input_dims, neural_nums_c_1)
-        self.fc_a = nn.Linear(action_numbers, action_numbers)
-        self.fc_q = nn.Linear(action_numbers + neural_nums_c_1, neural_nums_c_2)
+        self.fc_a = nn.Linear(action_numbers, neural_nums_c_1)
+        self.fc_q = nn.Linear(neural_nums_c_1 + neural_nums_c_1, neural_nums_c_2)
         self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
-        self.fc_out = nn.Linear(neural_nums_c_3, 1)
+        self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
+        self.fc_out = nn.Linear(neural_nums_c_4, 1)
+
+        self.dp = nn.Dropout(0.5)
 
     def forward(self, input, action):
         f_s = F.relu(self.fc_s(input))
         f_a = self.fc_a(action)
         cat = torch.cat([f_s, f_a], dim=1)
-        F.dropout(cat, p=0.2)
+        cat = self.dp(cat)
+
         q_ = F.relu(self.fc_q(cat))
-        F.dropout(q_, p=0.2)
+        q_ = self.dp(q_)
+
         q_1 = F.relu(self.fc_(q_))
-        F.dropout(q_1, p=0.2)
-        q_out = self.fc_out(q_1)
+        q_1 = self.dp(q_1)
+
+        q_2 = F.relu(self.fc_1(q_1))
+        q_2 = self.dp(q_2)
+
+        q_out = self.fc_out(q_2)
 
         return q_out
 
@@ -112,10 +133,10 @@ class DDPG():
             action_nums=1,
             latent_dims=5,
             campaign_id='1458',
-            lr_A=1e-4,
-            lr_C=1e-3,
+            lr_A=1e-3,
+            lr_C=1e-4,
             reward_decay=1,
-            memory_size=3000000,
+            memory_size=1000000,
             batch_size=256,
             tau=0.001, # for target network soft update
             device='cuda:0',

@@ -79,6 +79,7 @@ def reward_functions(y_preds, thresholds, labels, device):
     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
 
     punishment_for_without_clk = torch.where((1 - y_preds[without_clk_indexs]) != 0, punishment / (1 - y_preds[without_clk_indexs]), tensor_for_noclk * -1e5)
+
     reward_for_without_clk = torch.where(y_preds[without_clk_indexs] != 0, reward / y_preds[without_clk_indexs], tensor_for_noclk * 1e5)
 
     reward_for_with_clk = torch.where((1 - y_preds[with_clk_indexs]) != 0, reward / (1 - y_preds[with_clk_indexs]), tensor_for_clk * 1e5)
@@ -99,14 +100,12 @@ def train(model, data_loader, device, ou_noise_obj, exploration_rate):
     log_intervals = 0
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).float().to(device)
-        ou_noise = torch.FloatTensor(ou_noise_obj()[:len(features)]).view(-1, 1)
+        ou_noise = ou_noise_obj()[:len(features)].reshape(-1, 1)
 
         actions = model.choose_action(features) # ctrs
 
-        thresholds = torch.FloatTensor(np.clip(np.random.normal(actions[:, 1].reshape(-1, 1), np.abs(ou_noise) * exploration_rate), 0, 1)).to(device)
-
-        y_preds = torch.FloatTensor(np.clip(np.random.normal(actions[:, 0].reshape(-1, 1), np.abs(ou_noise) * exploration_rate), 0, 1)).to(device)
-
+        thresholds = torch.FloatTensor(np.clip(actions[:, 1].reshape(-1, 1) + ou_noise * exploration_rate, 0.5, 1)).to(device)
+        y_preds = torch.FloatTensor(np.clip(actions[:, 0].reshape(-1, 1) + ou_noise * exploration_rate, 0, 1)).to(device)
         rewards = reward_functions(y_preds, thresholds, labels, device).to(device)
 
         action_rewards = torch.cat([torch.FloatTensor(actions).to(device), rewards], dim=1)
@@ -143,6 +142,20 @@ def test(model, data_loader, loss, device):
     return roc_auc_score(targets, predicts), total_test_loss / intervals
 
 
+def submission(model, data_loader, device):
+    targets, predicts = list(), list()
+    with torch.no_grad():
+        for features, labels in data_loader:
+            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+            y = model.choose_action(features)
+            y_preds = torch.FloatTensor(y[:, 0].reshape(-1, 1)).to(device)
+
+            targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
+            predicts.extend(y_preds.tolist())
+
+    return predicts, roc_auc_score(targets, predicts)
+
+
 def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums, latent_dims, model_name, epoch, early_stop_type, batch_size, device, save_param_dir, ou_noise):
     if not os.path.exists(save_param_dir + campaign_id):
         os.mkdir(save_param_dir + campaign_id)
@@ -170,9 +183,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     is_early_stop = False
 
     start_time = datetime.datetime.now()
-    exploration_rate = 10
+    exploration_rate = 1
     for epoch_i in range(epoch):
-        exploration_rate *= 0.9
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
         train_start_time = datetime.datetime.now()
@@ -189,6 +201,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
+        exploration_rate *= 0.9
+
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
@@ -204,48 +218,39 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     else:
         test_model = model
 
-    auc, test_loss = test(model, test_data_loader, loss, device)
     torch.save(model.Actor.state_dict(), save_param_dir + model_name + 'best.pth')  # 存储最优参数
-
-    print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
     submission_path = data_path + dataset_name + campaign_id + model_name + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
 
-    days = day_indexs[:, 0]  # 数据集中有的日期
+    # 验证集submission
+    valid_predicts, valid_auc = submission(test_model, valid_data_loader, device)
+    valid_pred_df = pd.DataFrame(data=valid_predicts)
 
-    day_aucs = []
-    for day in days:
-        current_day_index = day_indexs[days == day]
-        data_index_start = current_day_index[0, 1]
-        data_index_end = current_day_index[0, 2] + 1
+    valid_pred_df.to_csv(submission_path + str(valid_day) + '_test_submission.csv', header=None)
 
-        current_data = torch.tensor(train_fm[data_index_start: data_index_end, 1:]).to(device)
-        y_labels = train_fm[data_index_start: data_index_end, 0]
+    # 测试集submission
+    test_predicts, test_auc = submission(test_model, test_data_loader, device)
+    test_pred_df = pd.DataFrame(data=test_predicts)
 
-        with torch.no_grad():
-            y_pred = test_model.choose_action(current_data)
+    test_pred_df.to_csv(submission_path + str(test_day) + '_test_submission.csv', header=None)
 
-            day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
+    day_aucs = [[valid_day, valid_auc], [test_day, test_auc]]
+    day_aucs_df = pd.DataFrame(data=day_aucs)
+    day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-            y_pred_df = pd.DataFrame(data=y_pred)
-
-            y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
-
-    with torch.no_grad():
-        day_aucs_df = pd.DataFrame(data=day_aucs)
-        day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
+    print('\ntest auc:', test_auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
 
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
     if type == 'auc':
-        if len(valid_aucs) > 5:
+        if len(valid_aucs) >= 5:
             if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[
                 -4] and valid_aucs[-4] < valid_aucs[-5]:
                 return True
     else:
-        if len(valid_losses) > 5:
+        if len(valid_losses) >= 5:
             if valid_losses[-1] > valid_losses[-2] and valid_losses[-2] > valid_losses[-3] and valid_losses[-3] > \
                     valid_losses[-4] and valid_losses[-4] > valid_losses[-5]:
                 return True
