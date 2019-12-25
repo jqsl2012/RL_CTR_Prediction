@@ -205,11 +205,6 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
             y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
 
     with torch.no_grad():
-        train_ctrs = test_model(torch.tensor(train_data[:, 1:]).to(device)).cpu().numpy()
-        train_labels = train_data[:, 0]
-        train_auc = roc_auc_score(train_labels, train_ctrs.flatten())
-
-        day_aucs.append(['train', train_auc])
         day_aucs_df = pd.DataFrame(data=day_aucs)
         day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
@@ -236,14 +231,14 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--model_name', default='FM', help='LR, FM, FFM')
-    parser.add_argument('--latent_dims', default=10)
+    parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
+    parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
-    parser.add_argument('--device', default='cpu:0')
+    parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')
 
     args = parser.parse_args()

@@ -22,8 +22,8 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device):
-    return Model.DDPG(feature_nums, field_nums, action_nums, latent_dims, batch_size=batch_size, device=device)
+def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device, campaign_id):
+    return Model.DDPG(feature_nums, field_nums, action_nums, latent_dims, campaign_id=campaign_id, batch_size=batch_size, device=device)
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -68,7 +68,7 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
 
     return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
 
-def reward_functions(y_preds, labels, device):
+def reward_functions(y_preds, thresholds, labels, device):
     reward = 1
     punishment = -1
 
@@ -84,8 +84,8 @@ def reward_functions(y_preds, labels, device):
     reward_for_with_clk = torch.where((1 - y_preds[with_clk_indexs]) != 0, reward / (1 - y_preds[with_clk_indexs]), tensor_for_clk * 1e5)
     punishment_for_with_clk = torch.where(y_preds[with_clk_indexs] != 0, punishment / y_preds[with_clk_indexs], tensor_for_clk * 1e5)
 
-    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= 0.5, punishment_for_without_clk, reward_for_without_clk).cpu().numpy()
-    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= 0.5, reward_for_with_clk, punishment_for_with_clk).cpu().numpy()
+    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= thresholds[without_clk_indexs], punishment_for_without_clk, reward_for_without_clk).cpu().numpy()
+    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= thresholds[with_clk_indexs], reward_for_with_clk, punishment_for_with_clk).cpu().numpy()
 
     for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
         reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
@@ -94,24 +94,28 @@ def reward_functions(y_preds, labels, device):
 
     return return_reward
 
-def train(model, data_loader, device, ou_noise_obj):
+def train(model, data_loader, device, ou_noise_obj, exploration_rate):
     total_loss = 0
     log_intervals = 0
-    for i, (features, labels) in enumerate(data_loader):
+    for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).float().to(device)
         ou_noise = torch.FloatTensor(ou_noise_obj()[:len(features)]).view(-1, 1)
 
-        states, y_preds = model.choose_action(features) # ctrs
+        actions = model.choose_action(features) # ctrs
 
-        y_preds = torch.FloatTensor(np.clip(np.random.normal(y_preds, np.abs(ou_noise)), 0, 1)).to(device)
+        thresholds = torch.FloatTensor(np.clip(np.random.normal(actions[:, 1].reshape(-1, 1), np.abs(ou_noise) * exploration_rate), 0, 1)).to(device)
 
-        rewards = reward_functions(y_preds, labels, device).to(device)
+        y_preds = torch.FloatTensor(np.clip(np.random.normal(actions[:, 0].reshape(-1, 1), np.abs(ou_noise) * exploration_rate), 0, 1)).to(device)
 
-        transitions = torch.cat([states, y_preds, rewards, states], dim=1)
+        rewards = reward_functions(y_preds, thresholds, labels, device).to(device)
 
-        model.store_transition(transitions)
+        action_rewards = torch.cat([torch.FloatTensor(actions).to(device), rewards], dim=1)
 
-        td_error, action_loss = model.learn()
+        model.store_transition(features, action_rewards)
+
+        b_s, b_a, b_r, b_s_ = model.sample_batch()
+        td_error = model.learn_c(b_s, b_a, b_r, b_s_)
+        a_loss = model.learn_a(b_s)
         model.soft_update(model.Actor, model.Actor_)
         model.soft_update(model.Critic, model.Critic_)
 
@@ -127,22 +131,21 @@ def test(model, data_loader, loss, device):
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            states, y = model.choose_action(features)
-            y = torch.FloatTensor(y).to(device)
+            y = model.choose_action(features)
+            y_preds = torch.FloatTensor(y[:, 0].reshape(-1, 1)).to(device)
 
-            test_loss = loss(y, labels.float())
+            test_loss = loss(y_preds, labels.float())
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
-            predicts.extend(y.tolist())
+            predicts.extend(y_preds.tolist())
             intervals += 1
             total_test_loss += test_loss.item()
 
     return roc_auc_score(targets, predicts), total_test_loss / intervals
 
 
-def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums, latent_dims, model_name, epoch, learning_rate,
-         weight_decay, early_stop_type, batch_size, device, save_param_dir, ou_noise):
-    if not os.path.exists(save_param_dir):
-        os.mkdir(save_param_dir)
+def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums, latent_dims, model_name, epoch, early_stop_type, batch_size, device, save_param_dir, ou_noise):
+    if not os.path.exists(save_param_dir + campaign_id):
+        os.mkdir(save_param_dir + campaign_id)
 
     device = torch.device(device)  # 指定运行设备
     train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path,
@@ -158,7 +161,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     valid_data_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device)
+    model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device, campaign_id)
     loss = nn.BCELoss()
 
     valid_aucs = []
@@ -167,14 +170,16 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     is_early_stop = False
 
     start_time = datetime.datetime.now()
+    exploration_rate = 10
     for epoch_i in range(epoch):
+        exploration_rate *= 0.9
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss = train(model, train_data_loader, device, ou_noise)
+        train_average_loss = train(model, train_data_loader, device, ou_noise, exploration_rate)
 
-        torch.save(model.Actor.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(model.Actor.state_dict(), save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
         auc, valid_loss = test(model, valid_data_loader, loss, device)
         valid_aucs.append(auc)
@@ -192,8 +197,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     end_time = datetime.datetime.now()
 
     if is_early_stop:
-        test_model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device)
-        load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+        test_model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device, campaign_id)
+        load_path = save_param_dir + campaign_id + model_name + str(early_stop_index) + '.pth'
 
         test_model.Actor.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
     else:
@@ -220,7 +225,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
         y_labels = train_fm[data_index_start: data_index_end, 0]
 
         with torch.no_grad():
-            states, y_pred = test_model.choose_action(current_data)
+            y_pred = test_model.choose_action(current_data)
 
             day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
 
@@ -229,12 +234,6 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
             y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
 
     with torch.no_grad():
-        train_states, train_ctrs = test_model.choose_action(torch.tensor(train_data[:, 1:]).to(device))
-
-        train_labels = train_data[:, 0]
-        train_auc = roc_auc_score(train_labels, train_ctrs.flatten())
-
-        day_aucs.append(['train', train_auc])
         day_aucs_df = pd.DataFrame(data=day_aucs)
         day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
@@ -262,12 +261,12 @@ if __name__ == '__main__':
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
     parser.add_argument('--model_name', default='DDPG', help='LR, FM, FFM')
-    parser.add_argument('--action_nums', default=1)
+    parser.add_argument('--action_nums', default=2)
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
-    parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
+    parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')
@@ -289,8 +288,6 @@ if __name__ == '__main__':
         args.latent_dims,
         args.model_name,
         args.epoch,
-        args.learning_rate,
-        args.weight_decay,
         args.early_stop_type,
         args.batch_size,
         args.device,
