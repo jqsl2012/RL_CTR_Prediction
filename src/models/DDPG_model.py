@@ -29,7 +29,7 @@ class Fature_embedding(nn.Module):
         self.latent_dims = latent_dims
         self.campaign_id = campaign_id
 
-        pretrain_params = torch.load('models/model_params/' + self.campaign_id + '/FFMbest.pth')
+        self.pretrain_params = torch.load('models/model_params/' + self.campaign_id + '/FFMbest.pth')
 
         self.field_feature_embeddings = nn.ModuleList([
             nn.Embedding(feature_numbers, latent_dims) for _ in range(field_nums)
@@ -37,14 +37,14 @@ class Fature_embedding(nn.Module):
         for i, embedding in enumerate(self.field_feature_embeddings):
             self.field_feature_embeddings[i].weight.data.copy_(
                 torch.from_numpy(
-                    np.array(pretrain_params['field_feature_embeddings.' + str(i) + '.weight'].cpu())
+                    np.array(self.pretrain_params['field_feature_embeddings.' + str(i) + '.weight'].cpu())
                 )
             )
 
         self.linear = nn.Embedding(feature_numbers, 1)
         self.linear.weight.data.copy_(
             torch.from_numpy(
-                np.array(pretrain_params['linear.weight'].cpu())
+                np.array(self.pretrain_params['linear.weight'].cpu())
             )
         )
 
@@ -53,7 +53,9 @@ class Fature_embedding(nn.Module):
         embedding_vectors = torch.FloatTensor().cuda()
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
-                embedding_vectors = torch.cat([embedding_vectors, (x_second_embedding[j][:, i] * x_second_embedding[i][:, j])], dim=1)
+                hadamard_product = x_second_embedding[j][:, i] * x_second_embedding[i][:, j]
+                inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1).detach()
+                embedding_vectors = torch.cat([embedding_vectors, hadamard_product, inner_product], dim=1)
 
         for i, embedding in enumerate(self.field_feature_embeddings):
             embedding_vectors = torch.cat([embedding_vectors, embedding(x[:, i])], dim=1)
@@ -98,8 +100,8 @@ class Critic(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Critic, self).__init__()
         self.fc_s = nn.Linear(input_dims, neural_nums_c_1)
-        self.fc_a = nn.Linear(action_numbers, neural_nums_c_1)
-        self.fc_q = nn.Linear(neural_nums_c_1 + neural_nums_c_1, neural_nums_c_2)
+        self.fc_a = nn.Linear(action_numbers, action_numbers)
+        self.fc_q = nn.Linear(action_numbers + neural_nums_c_1, neural_nums_c_2)
         self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
         self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
         self.fc_out = nn.Linear(neural_nums_c_4, 1)
@@ -133,8 +135,8 @@ class DDPG():
             action_nums=1,
             latent_dims=5,
             campaign_id='1458',
-            lr_A=1e-3,
-            lr_C=1e-4,
+            lr_A=1e-4,
+            lr_C=1e-3,
             reward_decay=1,
             memory_size=1000000,
             batch_size=256,
@@ -159,7 +161,7 @@ class DDPG():
         input_dims = 0
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
-                input_dims += 5
+                input_dims += 6
         input_dims += 90  # 15+75
         self.input_dims = input_dims
 
@@ -229,7 +231,7 @@ class DDPG():
         batch_memory_action_rewards = self.memory_action_reward[sample_index, :]
 
         b_s = self.embedding_layer.forward(torch.LongTensor(batch_memory_state).to(self.device))
-        b_a = torch.squeeze(torch.FloatTensor(batch_memory_action_rewards[:, 0: self.action_nums]).to(self.device), 1)
+        b_a = torch.FloatTensor(batch_memory_action_rewards[:, 0: self.action_nums]).to(self.device)
         b_r = torch.unsqueeze(torch.FloatTensor(batch_memory_action_rewards[:, self.action_nums]).to(self.device), 1)
         b_s_ = self.embedding_layer.forward(torch.LongTensor(batch_memory_state).to(self.device))
 

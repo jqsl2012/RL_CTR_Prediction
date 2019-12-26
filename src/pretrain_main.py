@@ -118,11 +118,10 @@ def submission(model, data_loader, device):
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            y = model.choose_action(features)
-            y_preds = torch.FloatTensor(y[:, 0].reshape(-1, 1)).to(device)
+            y = model(features)
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
-            predicts.extend(y_preds.tolist())
+            predicts.extend(y.tolist())
 
     return predicts, roc_auc_score(targets, predicts)
 
@@ -236,7 +235,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
