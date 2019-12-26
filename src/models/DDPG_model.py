@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+from collections import defaultdict
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -17,7 +18,8 @@ neural_nums_a_1 = 1024
 neural_nums_a_2 = 512
 neural_nums_a_3 = 256
 neural_nums_a_4 = 128
-neural_nums_c_1 = 1024
+neural_nums_c_1_state = 1024
+neural_nums_c_1_action = 64
 neural_nums_c_2 = 512
 neural_nums_c_3 = 256
 neural_nums_c_4 = 128
@@ -99,9 +101,9 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Critic, self).__init__()
-        self.fc_s = nn.Linear(input_dims, neural_nums_c_1)
-        self.fc_a = nn.Linear(action_numbers, action_numbers)
-        self.fc_q = nn.Linear(action_numbers + neural_nums_c_1, neural_nums_c_2)
+        self.fc_s = nn.Linear(input_dims, neural_nums_c_1_state)
+        self.fc_a = nn.Linear(action_numbers, neural_nums_c_1_action)
+        self.fc_q = nn.Linear(neural_nums_c_1_state + neural_nums_c_1_action, neural_nums_c_2)
         self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
         self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
         self.fc_out = nn.Linear(neural_nums_c_4, 1)
@@ -138,7 +140,7 @@ class DDPG():
             lr_A=1e-4,
             lr_C=1e-3,
             reward_decay=1,
-            memory_size=1000000,
+            memory_size=4096000,
             batch_size=256,
             tau=0.001, # for target network soft update
             device='cuda:0',

@@ -102,13 +102,14 @@ def reward_functions(y_preds, features, FFM, labels, device):
 def train(model, FFM, data_loader, device, ou_noise_obj, exploration_rate):
     total_loss = 0
     log_intervals = 0
+    total_rewards = 0
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).float().to(device)
         ou_noise = ou_noise_obj()[:len(features)].reshape(-1, 1)
 
         actions = model.choose_action(features) # ctrs
 
-        y_preds = torch.FloatTensor(np.clip(actions + ou_noise * exploration_rate, 1e-5, 1)).to(device)
+        y_preds = torch.FloatTensor(np.clip(np.random.normal(actions, exploration_rate), 1e-5, 1)).to(device)
         rewards = reward_functions(y_preds, features, FFM, labels, device).to(device)
 
         action_rewards = torch.cat([y_preds, rewards], dim=1)
@@ -125,7 +126,9 @@ def train(model, FFM, data_loader, device, ou_noise_obj, exploration_rate):
         total_loss += td_error
         log_intervals += 1
 
-    return total_loss / log_intervals
+        total_rewards += torch.sum(rewards, dim=0)
+
+    return total_loss / log_intervals, total_rewards.cpu().numpy()[0] / log_intervals
 
 def test(model, data_loader, loss, device):
     targets, predicts = list(), list()
@@ -194,7 +197,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss = train(model, FFM, train_data_loader, device, ou_noise, exploration_rate)
+        train_average_loss, train_rewards = train(model, FFM, train_data_loader, device, ou_noise, exploration_rate)
 
         torch.save(model.Actor.state_dict(), save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
@@ -203,10 +206,10 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
         valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation auc:', auc,
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training rewards', train_rewards, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.9
+        exploration_rate *= 0.95
 
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
@@ -269,14 +272,14 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
     parser.add_argument('--model_name', default='DDPG', help='LR, FM, FFM')
     parser.add_argument('--action_nums', default=1)
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
-    parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
+    parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')
