@@ -23,8 +23,9 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device, campaign_id):
-    return Model.DDPG(feature_nums, field_nums, action_nums, latent_dims, campaign_id=campaign_id, batch_size=batch_size, device=device)
+def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
+    return Model.DDPG(feature_nums, field_nums, action_nums, latent_dims,
+                      campaign_id=campaign_id, batch_size=batch_size, memory_size=memory_size, device=device)
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -179,7 +180,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     valid_data_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device, campaign_id)
+    memory_size = round(len(train_data), -6)
+    model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
     loss = nn.BCELoss()
 
     FFM = p_Model.FFM(feature_nums, field_nums, latent_dims)
@@ -272,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3358, 3386, 3427, 3476')
     parser.add_argument('--model_name', default='DDPG', help='LR, FM, FFM')
     parser.add_argument('--action_nums', default=1)
     parser.add_argument('--latent_dims', default=5)

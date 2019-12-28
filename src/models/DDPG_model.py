@@ -43,31 +43,19 @@ class Fature_embedding(nn.Module):
                 )
             )
 
-        self.linear = nn.Embedding(feature_numbers, 1)
-        self.linear.weight.data.copy_(
-            torch.from_numpy(
-                np.array(self.pretrain_params['linear.weight'].cpu())
-            )
-        )
-
     def forward(self, x):
         x_second_embedding = [self.field_feature_embeddings[i](x) for i in range(self.field_nums)]
         embedding_vectors = torch.FloatTensor().cuda()
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
                 hadamard_product = x_second_embedding[j][:, i] * x_second_embedding[i][:, j]
-                inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1).detach()
-                embedding_vectors = torch.cat([embedding_vectors, hadamard_product, inner_product], dim=1)
+                # inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1).detach()
+                embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
 
         for i, embedding in enumerate(self.field_feature_embeddings):
             embedding_vectors = torch.cat([embedding_vectors, embedding(x[:, i])], dim=1)
 
-        x_linear_embedding = self.linear(x).view(-1, self.field_nums)
-
-        embedding_vectors = torch.cat([embedding_vectors, x_linear_embedding], dim=1)
-
         return embedding_vectors.detach()
-        # return self.field_feature_embeddings(x).view(-1, self.field_nums * self.latent_dims) # m * n矩阵平铺为1 * [m*n]
 
 class Actor(nn.Module):
     def __init__(self, input_dims, action_numbers):
@@ -163,8 +151,8 @@ class DDPG():
         input_dims = 0
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
-                input_dims += 6
-        input_dims += 90  # 15+75
+                input_dims += 5
+        input_dims += 75  # 15+75
         self.input_dims = input_dims
 
         self.memory_state = np.zeros((self.memory_size, self.field_nums))
