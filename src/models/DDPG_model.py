@@ -184,6 +184,7 @@ class DDPG():
         input_dims += 75  # 15+75
         self.input_dims = input_dims
 
+        self.state_action_reward_pairs = defaultdict()
         self.memory_state = np.zeros((self.memory_size, self.field_nums))
         self.memory_action_reward = np.zeros((self.memory_size, self.action_nums + 1))
 
@@ -202,7 +203,6 @@ class DDPG():
         self.loss_func = nn.MSELoss(reduction='mean')
 
     def store_transition(self, features, action_rewards):
-
         features = features.cpu().detach().numpy()
         action_rewards = action_rewards.cpu().detach().numpy()
         transition_lens = len(features)
