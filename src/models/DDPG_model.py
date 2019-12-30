@@ -49,13 +49,42 @@ class Fature_embedding(nn.Module):
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
                 hadamard_product = x_second_embedding[j][:, i] * x_second_embedding[i][:, j]
-                # inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1).detach()
+                # inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1)
                 embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
 
         for i, embedding in enumerate(self.field_feature_embeddings):
             embedding_vectors = torch.cat([embedding_vectors, embedding(x[:, i])], dim=1)
 
         return embedding_vectors.detach()
+#
+#
+# class Fature_embedding(nn.Module):
+#     def __init__(self, feature_numbers, field_nums, latent_dims, campaign_id):
+#         super(Fature_embedding, self).__init__()
+#         self.field_nums = field_nums
+#         self.latent_dims = latent_dims
+#         self.campaign_id = campaign_id
+#
+#         self.pretrain_params = torch.load('models/model_params/' + self.campaign_id + '/FMbest.pth')
+#         self.feature_embedding = nn.Embedding(feature_numbers, latent_dims)
+#         self.feature_embedding.weight.data.copy_(
+#             torch.from_numpy(
+#                 np.array(self.pretrain_params['feature_embedding.weight'].cpu())
+#             )
+#         )
+#
+#     def forward(self, x):
+#         x_second_embedding = self.feature_embedding(x)
+#         embedding_vectors = torch.FloatTensor().cuda()
+#         for i in range(self.field_nums - 1):
+#             for j in range(i + 1, self.field_nums):
+#                 hadamard_product = x_second_embedding[:, i] * x_second_embedding[:, j]
+#                 embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
+#
+#         embedding_vectors = torch.cat([embedding_vectors, x_second_embedding.view(-1, self.field_nums * self.latent_dims)], dim=1)
+#
+#         return embedding_vectors.detach()
+
 
 class Actor(nn.Module):
     def __init__(self, input_dims, action_numbers):

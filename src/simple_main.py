@@ -73,8 +73,8 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
 def reward_functions(y_preds, features, FFM, labels, device):
     FFM_preds = FFM(features.cpu()).to(device).detach()
 
-    reward = 0.1
-    punishment = -0.1
+    reward = 1
+    punishment = -1
 
     with_clk_indexs = (labels == 1).nonzero()[:, 0]
     without_clk_indexs = (labels == 0).nonzero()[:, 0]
@@ -82,16 +82,16 @@ def reward_functions(y_preds, features, FFM, labels, device):
     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
 
-    deviation_without_clk = FFM_preds[without_clk_indexs] - y_preds[without_clk_indexs]
-    reward_for_without_clk = torch.where(deviation_without_clk != 0, reward / deviation_without_clk, tensor_for_noclk * reward)
-    punishment_for_without_clk = torch.where(deviation_without_clk != 0, deviation_without_clk, tensor_for_noclk * punishment)
+    # deviation_without_clk = FFM_preds[without_clk_indexs] - y_preds[without_clk_indexs]
+    # reward_for_without_clk = torch.where(deviation_without_clk != 0, reward / deviation_without_clk, tensor_for_noclk * reward)
+    # punishment_for_without_clk = torch.where(deviation_without_clk != 0, deviation_without_clk, tensor_for_noclk * punishment)
+    #
+    # deviation_with_clk = FFM_preds[with_clk_indexs] - y_preds[with_clk_indexs]
+    # reward_for_with_clk = torch.where(deviation_with_clk != 0, -deviation_with_clk, tensor_for_clk * reward)
+    # punishment_for_with_clk = torch.where(deviation_with_clk != 0, -deviation_with_clk, tensor_for_clk * punishment)
 
-    deviation_with_clk = FFM_preds[with_clk_indexs] - y_preds[with_clk_indexs]
-    reward_for_with_clk = torch.where(deviation_with_clk != 0, -deviation_with_clk, tensor_for_clk * reward)
-    punishment_for_with_clk = torch.where(deviation_with_clk != 0, -deviation_with_clk, tensor_for_clk * punishment)
-
-    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= FFM_preds[without_clk_indexs], punishment_for_without_clk, reward_for_without_clk).cpu().numpy()
-    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= FFM_preds[with_clk_indexs], reward_for_with_clk, punishment_for_with_clk).cpu().numpy()
+    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= FFM_preds[without_clk_indexs], tensor_for_noclk * punishment, tensor_for_noclk * reward).cpu().numpy()
+    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= FFM_preds[with_clk_indexs], tensor_for_clk * reward, tensor_for_clk * punishment).cpu().numpy()
 
     for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
         reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
@@ -211,7 +211,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training rewards', train_rewards, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.95
+        exploration_rate *= 0.995
 
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
@@ -221,7 +221,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     end_time = datetime.datetime.now()
 
     if is_early_stop:
-        test_model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, device, campaign_id)
+        test_model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
         load_path = save_param_dir + campaign_id + model_name + str(early_stop_index) + '.pth'
 
         test_model.Actor.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
