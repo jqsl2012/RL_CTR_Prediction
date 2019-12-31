@@ -100,21 +100,6 @@ def reward_functions(y_preds, features, FFM, labels, device):
 
     return return_reward
 
-def reset_state_action_reward_pair(model, features, y_preds, rewards):
-    features = features.cpu().numpy()
-    for i in range(len(features)):
-        features_tuple = tuple(features[i])
-        action_reward_pair = model.state_action_reward_pairs.get(features_tuple)
-        max_rtn = max(rewards[i], action_reward_pair[1])
-
-        if max_rtn == rewards[i]:
-            model.state_action_reward_pairs[features_tuple] = (y_preds[i], max_rtn)
-        else:
-            y_preds[i] = action_reward_pair[0]
-            rewards[i] = action_reward_pair[1]
-
-    return y_preds, rewards
-
 def train(model, FFM, data_loader, device, ou_noise_obj, exploration_rate):
     total_loss = 0
     log_intervals = 0
@@ -125,10 +110,9 @@ def train(model, FFM, data_loader, device, ou_noise_obj, exploration_rate):
 
         actions = model.choose_action(features) # ctrs
 
-        y_preds = torch.FloatTensor(np.clip(np.random.normal(actions, exploration_rate), 1e-5, 1)).to(device)
+        y_preds = torch.FloatTensor(np.clip(actions + ou_noise * exploration_rate, 1e-5, 1)).to(device)
         rewards = reward_functions(y_preds, features, FFM, labels, device).to(device)
 
-        y_preds, rewards = reset_state_action_reward_pair(model, features, y_preds, rewards)
         action_rewards = torch.cat([y_preds, rewards], dim=1)
 
         model.store_transition(features, action_rewards)
@@ -200,9 +184,6 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
     model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
     loss = nn.BCELoss()
 
-    for i in range(len(train_data)):
-        model.state_action_reward_pairs[tuple(train_data[i, 1: field_nums + 1])] = (0, -1)
-
     FFM = p_Model.FFM(feature_nums, field_nums, latent_dims)
     FFM.load_state_dict(model.embedding_layer.pretrain_params)
 
@@ -230,7 +211,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, action_nums,
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training rewards', train_rewards, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.995
+        exploration_rate *= 0.95
 
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)

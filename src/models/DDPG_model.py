@@ -46,7 +46,7 @@ class Fature_embedding(nn.Module):
     def forward(self, x):
         x_second_embedding = [self.field_feature_embeddings[i](x) for i in range(self.field_nums)]
         embedding_vectors = torch.FloatTensor().cuda()
-        for i in range(self.field_nums - 1):
+        for i in range(self.field_nums):
             for j in range(i + 1, self.field_nums):
                 hadamard_product = x_second_embedding[j][:, i] * x_second_embedding[i][:, j]
                 # inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1)
@@ -90,10 +90,15 @@ class Actor(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(input_dims, neural_nums_a_1)
+        self.fc1.weight.data.normal_(0, 0.1)
         self.fc2 = nn.Linear(neural_nums_a_1, neural_nums_a_2)
+        self.fc2.weight.data.normal_(0, 0.1)
         self.fc3 = nn.Linear(neural_nums_a_2, neural_nums_a_3)
+        self.fc3.weight.data.normal_(0, 0.1)
         self.fc4 = nn.Linear(neural_nums_a_3, neural_nums_a_4)
+        self.fc4.weight.data.normal_(0, 0.1)
         self.out = nn.Linear(neural_nums_a_4, action_numbers)
+        self.out.weight.data.normal_(0, 0.1)
 
         self.dp = nn.Dropout(0.5)
 
@@ -119,11 +124,17 @@ class Critic(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Critic, self).__init__()
         self.fc_s = nn.Linear(input_dims, neural_nums_c_1_state)
+        self.fc_s.weight.data.normal_(0, 0.1)
         self.fc_a = nn.Linear(action_numbers, neural_nums_c_1_action)
+        self.fc_a.weight.data.normal_(0, 0.1)
         self.fc_q = nn.Linear(neural_nums_c_1_state + neural_nums_c_1_action, neural_nums_c_2)
+        self.fc_q.weight.data.normal_(0, 0.1)
         self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
+        self.fc_.weight.data.normal_(0, 0.1)
         self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
+        self.fc_1.weight.data.normal_(0, 0.1)
         self.fc_out = nn.Linear(neural_nums_c_4, 1)
+        self.fc_out.weight.data.normal_(0, 0.1)
 
         self.dp = nn.Dropout(0.5)
 
@@ -178,13 +189,12 @@ class DDPG():
         self.memory_counter = 0
 
         input_dims = 0
-        for i in range(self.field_nums - 1):
+        for i in range(self.field_nums):
             for j in range(i + 1, self.field_nums):
                 input_dims += 5
         input_dims += 75  # 15+75
         self.input_dims = input_dims
 
-        self.state_action_reward_pairs = defaultdict()
         self.memory_state = np.zeros((self.memory_size, self.field_nums))
         self.memory_action_reward = np.zeros((self.memory_size, self.action_nums + 1))
 
