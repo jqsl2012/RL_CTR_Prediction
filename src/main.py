@@ -6,7 +6,9 @@ import os
 import argparse
 import random
 from sklearn.metrics import roc_auc_score
-import src.models.p_model as Model
+import src.models.PG_model as Model
+import src.models.p_model as p_model
+import src.models.DDPG_for_PG_model as DDPG_for_PG_model
 import src.models.creat_data as Data
 
 import torch
@@ -20,13 +22,11 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-def get_model(model_name, feature_nums, field_nums, latent_dims):
-    if model_name == 'LR':
-        return Model.LR(feature_nums)
-    elif model_name == 'FM':
-        return Model.FM(feature_nums, latent_dims)
-    elif model_name == 'FFM':
-        return Model.FFM(feature_nums, field_nums, latent_dims)
+def get_model(feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
+    PG_model = Model.PolicyGradient(feature_nums, field_nums, latent_dims, device=device)
+    DDPG_for_PG_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
+                      campaign_id=campaign_id, batch_size=batch_size, memory_size=memory_size, device=device)
+    return PG_model, DDPG_for_PG_Model
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -70,26 +70,52 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     test_data = train_fm[test_index_start: test_index_end, :]
 
     return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
-    
-def train(model, optimizer, data_loader, loss, device):
-    model.train() # 转换为训练模式
+
+def reward_functions(y_preds, features, FFM, labels, device):
+    FFM_preds = FFM(features.cpu()).to(device).detach()
+
+    reward = 1
+    punishment = -1
+
+    with_clk_indexs = (labels == 1).nonzero()[:, 0]
+    without_clk_indexs = (labels == 0).nonzero()[:, 0]
+
+    tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
+    tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
+
+    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= FFM_preds[without_clk_indexs], tensor_for_noclk * punishment, tensor_for_noclk * reward).cpu().numpy()
+    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= FFM_preds[with_clk_indexs], tensor_for_clk * reward, tensor_for_clk * punishment).cpu().numpy()
+
+    for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
+        reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
+
+    return_reward = torch.FloatTensor(reward_without_clk).view(-1, 1)
+
+    return return_reward
+
+def train(pg_model, ddpg_for_pg_model, FFM, FM, LR, data_loader, device):
     total_loss = 0
     log_intervals = 0
     for i, (features, labels) in enumerate(data_loader):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-        y = model(features)
-        train_loss = loss(y, labels.float())
+        action = pg_model.choose_action(features)
 
+        ddpg_for_pg_model.embedding_for_DDPG(pg_model)
+        prob_weights = ddpg_for_pg_model.choose_action(features)
 
+        print(action, prob_weights)
 
-        total_loss += train_loss.item() # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        r = np.ones((len(features), 1))
+        if i == 0:
+            print(features)
+        model.store_transition(features.cpu().numpy(), y, r, i)
 
+        total_loss += 1 # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
         log_intervals += 1
 
     return total_loss / log_intervals
 
 def test(model, data_loader, loss, device):
-    model.eval()
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
@@ -122,10 +148,19 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     valid_data_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
+    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    FFM.load_state_dict(torch.load('models/model_params/' + campaign_id + '/FFMbest.pth'))
+
+    FM = p_model.FM(feature_nums, latent_dims)
+    FM.load_state_dict(torch.load('models/model_params/' + campaign_id + '/FMbest.pth'))
+
+    LR = p_model.LR(feature_nums)
+    LR.load_state_dict(torch.load('models/model_params/' + campaign_id + '/LRbest.pth'))
+
+    memory_size = round(len(train_data), -6)
+    pg_model, ddpg_for_pg_model = get_model(feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
     loss = nn.BCELoss()
-    optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     valid_aucs = []
     valid_losses = []
@@ -138,7 +173,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss = train(model, optimizer, train_data_loader, loss, device)
+        train_average_loss = train(pg_model, ddpg_for_pg_model, FFM, FM, LR, train_data_loader, device)
 
         torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
