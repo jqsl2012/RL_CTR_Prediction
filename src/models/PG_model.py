@@ -5,64 +5,122 @@ import torch.nn.functional as F
 
 np.random.seed(1)
 
-neuron_nums = 100
+neuron_nums_1 = 100
+neuron_nums_2 = 512
+neuron_nums_3 = 256
+neuron_nums_4 = 128
 
 class Net(nn.Module):
-    def __init__(self, feature_numbers, latent_dims, action_numbers):
+    def __init__(self, field_nums, feature_nums, latent_dims, action_numbers):
         super(Net, self).__init__()
-        self.feature_embedding
-        self.fc1 = nn.Linear(feature_numbers, neuron_nums)
+        self.field_nums = field_nums
+        self.feature_nums = feature_nums
+        self.latent_dims = latent_dims
+
+        self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
+        nn.init.xavier_normal_(self.feature_embedding.weight.data)
+
+        input_dims = 0
+        for i in range(self.field_nums):
+            for j in range(i + 1, self.field_nums):
+                input_dims += self.latent_dims
+        input_dims += self.field_nums * self.latent_dims
+        self.input_dims = input_dims
+
+        self.fc1 = nn.Linear(self.input_dims, neuron_nums_1)
         self.fc1.weight.data.normal_(0, 0.1)  # 全连接隐层 1 的参数初始化
-        self.fc2 = nn.Linear(neuron_nums, action_numbers)
+        self.fc2 = nn.Linear(neuron_nums_1, neuron_nums_2)
         self.fc2.weight.data.normal_(0, 0.1)  # 全连接隐层 2 的参数初始化
+        self.fc3 = nn.Linear(neuron_nums_2, neuron_nums_3)
+        self.fc3.weight.data.normal_(0, 0.1)
+        self.fc4 = nn.Linear(neuron_nums_3, neuron_nums_4)
+        self.fc4.weight.data.normal_(0, 0.1)
+        self.out = nn.Linear(neuron_nums_4, action_numbers)
+        self.out.weight.data.normal_(0, 0.1)
+
+        self.dp = nn.Dropout(0.5)
 
     def forward(self, input):
-        x = self.fc1(input)
-        x = F.relu(x)
-        y = self.fc2(x)
-        actions_value = F.softmax(y, dim=1)
-        return actions_value
+        input_embedding = self.feature_embedding(input)
+        embedding_vectors = torch.FloatTensor()
+        for i in range(self.field_nums):
+            for j in range(i + 1, self.field_nums):
+                hadamard_product = input_embedding[:, i] * input_embedding[:, j]
+                embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
+        embedding_vectors = torch.cat([embedding_vectors, input_embedding.view(-1, self.field_nums * self.latent_dims)], dim=1)
 
-def store_para(Net, model_name):
-    torch.save(Net.state_dict(), 'Model/PG' + model_name + '_model_params.pth')
+        x =  F.relu(self.fc1(embedding_vectors))
+        x = self.dp(x)
+
+        x_ = F.relu(self.fc2(x))
+        x_ = self.dp(x_)
+
+        x_1 = F.relu(self.fc3(x_))
+        x_1 = self.dp(x_1)
+
+        x_2 = F.relu(self.fc4(x_1))
+        x_2 = self.dp(x_2)
+
+        actions_value = F.softmax(self.out(x_2), dim=1)
+
+        return actions_value
 
 class PolicyGradient:
     def __init__(
             self,
-            action_nums,
             feature_nums,
+            field_nums,
+            latent_dims,
+            action_nums=3,
             learning_rate=0.01,
             reward_decay=1,
+            device='cuda:0',
     ):
         self.action_nums = action_nums
         self.feature_nums = feature_nums
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
         self.lr = learning_rate
         self.gamma = reward_decay
+        self.device = device
 
         self.ep_states, self.ep_as, self.ep_rs = [], [], [] # 状态，动作，奖励，在一轮训练后存储
 
-        self.policy_net = Net(self.feature_nums, self.action_nums).cuda()
+        self.policy_net = Net(self.field_nums, self.feature_nums, self.latent_dims, self.action_nums).to(self.device)
 
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=self.lr)
 
     def loss_func(self, all_act_prob, acts, vt):
-        neg_log_prob = torch.sum(-torch.log(all_act_prob.gather(1, acts - 1))).cuda()
-        loss = torch.mean(torch.mul(neg_log_prob, vt)).cuda()
+        neg_log_prob = torch.sum(-torch.log(all_act_prob.gather(1, acts - 1))).to(self.device)
+        loss = torch.mean(torch.mul(neg_log_prob, vt)).to(self.device)
         return loss
+
+    def choose_from_dribution(self, prob_weights):
+        actions = []
+        for prob_weight in prob_weights:
+            actions.append(np.random.choice(range(0, prob_weight.shape[0]), p=prob_weight.ravel()) + 1)
+        return np.array(actions).reshape(-1, 1)
 
     # 依据概率来选择动作，本身具有随机性
     def choose_action(self, state):
         torch.cuda.empty_cache()
-        state = torch.unsqueeze(torch.FloatTensor(state), 0).cuda()
-        prob_weights = self.policy_net.forward(state).detach().cpu().numpy()
-        action = np.random.choice(range(1, prob_weights.shape[1]+1), p=prob_weights.ravel())
-        return action
+
+        with torch.no_grad():
+            prob_weights = self.policy_net.forward(state).detach().cpu().numpy()
+            actions = self.choose_from_dribution(prob_weights)
+
+        return actions
 
     # 储存一回合的s,a,r；因为每回合训练
-    def store_transition(self, s, a, r):
-        self.ep_states.append(s)
-        self.ep_as.append(a)
-        self.ep_rs.append(r)
+    def store_transition(self, s, a, r, i):
+        if i == 0:
+            self.ep_states = s
+            self.ep_as = a
+            self.ep_rs = r
+        else:
+            self.ep_states = np.vstack((self.ep_states, s))
+            self.ep_as = np.vstack((self.ep_as, a))
+            self.ep_rs = np.vstack((self.ep_rs, r))
 
     # 对每一轮的奖励值进行累计折扣及归一化处理
     def discount_and_norm_rewards(self):
@@ -86,9 +144,9 @@ class PolicyGradient:
         # 对每一回合的奖励，进行折扣计算以及归一化
         discounted_ep_rs_norm = self.discount_and_norm_rewards()
 
-        states = torch.FloatTensor(self.ep_states).cuda()
-        acts = torch.unsqueeze(torch.LongTensor(self.ep_as), 1).cuda()
-        vt = torch.FloatTensor(discounted_ep_rs_norm).cuda()
+        states = torch.FloatTensor(self.ep_states).to(self.device)
+        acts = torch.unsqueeze(torch.LongTensor(self.ep_as), 1).to(self.device)
+        vt = torch.FloatTensor(discounted_ep_rs_norm).to(self.device)
 
         all_act_probs = self.policy_net.forward(states)
 
@@ -101,19 +159,3 @@ class PolicyGradient:
         # 训练完后清除训练数据，开始下一轮
         self.ep_states, self.ep_as, self.ep_rs = [], [], []
         return discounted_ep_rs_norm
-
-    # 只存储获得最优收益（点击）那一轮的参数
-    def para_store_iter(self, test_results):
-        max = 0
-        if len(test_results) >= 3:
-            for i in range(len(test_results)):
-                if i == 0:
-                    max = test_results[i]
-                elif i != len(test_results) - 1:
-                    if test_results[i] > test_results[i - 1] and test_results[i] > test_results[i + 1]:
-                        if max < test_results[i]:
-                            max = test_results[i]
-                else:
-                    if test_results[i] > max:
-                        max = test_results[i]
-        return max
