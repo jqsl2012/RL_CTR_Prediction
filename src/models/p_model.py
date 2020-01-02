@@ -100,3 +100,46 @@ class FFM(nn.Module):
 
         return pctrs
 
+class WideAndDeep(nn.Module):
+    def __init__(self,
+                 feature_nums,
+                 field_nums,
+                 latent_dims,
+                 output_dim=1):
+        super(WideAndDeep, self).__init__()
+        self.feature_nums = feature_nums
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
+
+        self.linear = nn.Embedding(feature_nums, output_dim)
+        nn.init.xavier_normal_(self.linear.weight.data)
+        self.bias = nn.Parameter(torch.zeros((output_dim,)))
+
+        self.embedding = nn.Embedding(self.feature_nums, self.latent_dims)
+
+        input_dims = self.field_nums * self.latent_dims
+        layers = list()
+        for i in range(2):
+            layers.append(nn.Linear(input_dims, self.latent_dims))
+            layers.append(nn.BatchNorm1d(self.latent_dims))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            input_dims = self.latent_dims
+
+        layers.append(nn.Linear(input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, input):
+        """
+        :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+        :return: pctrs
+        """
+        embedding_input = self.embedding(input)
+
+        out = self.bias + self.linear(input) + self.mlp(embedding_input.view(-1, self.field_nums * self.latent_dims))
+
+        return torch.sigmoid(out)
+
+
+
+

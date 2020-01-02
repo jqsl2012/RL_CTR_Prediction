@@ -29,6 +29,8 @@ def get_model(model_name, feature_nums, field_nums, latent_dims):
         return Model.FM(feature_nums, latent_dims)
     elif model_name == 'FFM':
         return Model.FFM(feature_nums, field_nums, latent_dims)
+    elif model_name == 'W&D':
+        return Model.WideAndDeep(feature_nums, field_nums, latent_dims)
 
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
@@ -236,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3358, 3386, 3427, 3476')
-    parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
+    parser.add_argument('--model_name', default='W&D', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
