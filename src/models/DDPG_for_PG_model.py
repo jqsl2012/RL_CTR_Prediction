@@ -5,6 +5,8 @@ import numpy as np
 import random
 from collections import defaultdict
 
+from src.models.Feature_embedding import Feature_Embedding
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -24,17 +26,22 @@ neural_nums_c_2 = 512
 neural_nums_c_3 = 256
 neural_nums_c_4 = 128
 
+
 class Actor(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(input_dims, neural_nums_a_1)
         self.fc1.weight.data.normal_(0, 0.1)
+
         self.fc2 = nn.Linear(neural_nums_a_1, neural_nums_a_2)
         self.fc2.weight.data.normal_(0, 0.1)
+
         self.fc3 = nn.Linear(neural_nums_a_2, neural_nums_a_3)
-        self.fc4.weight.data.normal_(0, 0.1)
+        self.fc3.weight.data.normal_(0, 0.1)
+
         self.fc4 = nn.Linear(neural_nums_a_3, neural_nums_a_4)
         self.fc4.weight.data.normal_(0, 0.1)
+
         self.out = nn.Linear(neural_nums_a_4, action_numbers)
         self.out.weight.data.normal_(0, 0.1)
 
@@ -53,23 +60,29 @@ class Actor(nn.Module):
         x_2 = F.relu(self.fc4(x_1))
         x_2 = self.dp(x_2)
 
-        out = torch.sigmoid(self.out(x_2))
+        out = torch.softmax(self.out(x_2), dim=1)
 
         return out
+
 
 class Critic(nn.Module):
     def __init__(self, input_dims, action_numbers):
         super(Critic, self).__init__()
         self.fc_s = nn.Linear(input_dims, neural_nums_c_1_state)
         self.fc_s.weight.data.normal_(0, 0.1)
+
         self.fc_a = nn.Linear(action_numbers, neural_nums_c_1_action)
         self.fc_a.weight.data.normal_(0, 0.1)
+
         self.fc_q = nn.Linear(neural_nums_c_1_state + neural_nums_c_1_action, neural_nums_c_2)
         self.fc_q.weight.data.normal_(0, 0.1)
+
         self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
         self.fc_.weight.data.normal_(0, 0.1)
+
         self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
         self.fc_1.weight.data.normal_(0, 0.1)
+
         self.fc_out = nn.Linear(neural_nums_c_4, 1)
         self.fc_out.weight.data.normal_(0, 0.1)
 
@@ -100,7 +113,7 @@ class DDPG():
             feature_nums,
             field_nums=15,
             latent_dims=5,
-            action_nums=3,
+            action_nums=2,
             campaign_id='1458',
             lr_A=1e-4,
             lr_C=1e-3,
@@ -132,7 +145,7 @@ class DDPG():
         input_dims += self.latent_dims * self.field_nums  # 15+75
         self.input_dims = input_dims
 
-        self.embedding_layer = nn.Embedding(self.feature_nums, self.latent_dims)
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
 
         self.state_action_reward_pairs = defaultdict()
         self.memory_state = np.zeros((self.memory_size, self.field_nums))
@@ -149,6 +162,21 @@ class DDPG():
         self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
+
+    def load_embedding(self, pretrain_params):
+        for i, embedding in enumerate(self.embedding_layer.field_feature_embeddings):
+            embedding.weight.data.copy_(
+                torch.from_numpy(
+                    np.array(pretrain_params['field_feature_embeddings.' + str(i) + '.weight'].cpu())
+                )
+            )
+
+    # def load_embedding(self, pretrain_params):
+    #     self.embedding_layer.feature_embedding.weight.data.copy_(
+    #         torch.from_numpy(
+    #             np.array(pretrain_params['feature_embedding.weight'].cpu())
+    #         )
+    #     )
 
     def store_transition(self, features, action_rewards):
         features = features.cpu().detach().numpy()
@@ -172,23 +200,9 @@ class DDPG():
 
         self.memory_counter += transition_lens
 
-    def embedding_for_DDPG(self, pg_model):
-        self.embedding_layer = pg_model.policy_net.feature_embedding()
-
-    def to_embedding_vetors(self, features):
-        input_embedding = self.embedding_layer(features)
-        embedding_vectors = torch.FloatTensor()
-        for i in range(self.field_nums):
-            for j in range(i + 1, self.field_nums):
-                hadamard_product = input_embedding[:, i] * input_embedding[:, j]
-                embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
-        embedding_vectors = torch.cat([embedding_vectors, input_embedding.view(-1, self.field_nums * self.latent_dims)],
-                                      dim=1)
-        return embedding_vectors
-
     def choose_action(self, state):
 
-        state = self.to_embedding_vetors(state)
+        state = self.embedding_layer.forward(state)
 
         self.Actor.eval()
         with torch.no_grad():
@@ -211,10 +225,10 @@ class DDPG():
         batch_memory_state = self.memory_state[sample_index, :]
         batch_memory_action_rewards = self.memory_action_reward[sample_index, :]
 
-        b_s = self.to_embedding_vetors(torch.LongTensor(batch_memory_state).to(self.device))
+        b_s = self.embedding_layer.forward(torch.LongTensor(batch_memory_state).to(self.device))
         b_a = torch.FloatTensor(batch_memory_action_rewards[:, 0: self.action_nums]).to(self.device)
         b_r = torch.unsqueeze(torch.FloatTensor(batch_memory_action_rewards[:, self.action_nums]).to(self.device), 1)
-        b_s_ = self.to_embedding_vetors(torch.LongTensor(batch_memory_state).to(self.device))
+        b_s_ = self.embedding_layer.forward(torch.LongTensor(batch_memory_state).to(self.device))
 
         return b_s, b_a, b_r, b_s_
 
@@ -238,6 +252,8 @@ class DDPG():
         self.optimizer_a.step()
 
         a_loss_r = a_loss.item()
+
+        torch.cuda.empty_cache()
 
         return a_loss_r
 

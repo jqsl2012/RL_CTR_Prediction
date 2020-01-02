@@ -24,9 +24,10 @@ neural_nums_c_2 = 512
 neural_nums_c_3 = 256
 neural_nums_c_4 = 128
 
-class Fature_embedding(nn.Module):
+
+class Feature_Embedding(nn.Module):
     def __init__(self, feature_numbers, field_nums, latent_dims, campaign_id):
-        super(Fature_embedding, self).__init__()
+        super(Feature_Embedding, self).__init__()
         self.field_nums = field_nums
         self.latent_dims = latent_dims
         self.campaign_id = campaign_id
@@ -49,18 +50,17 @@ class Fature_embedding(nn.Module):
         for i in range(self.field_nums):
             for j in range(i + 1, self.field_nums):
                 hadamard_product = x_second_embedding[j][:, i] * x_second_embedding[i][:, j]
-                # inner_product = torch.sum(hadamard_product, dim=1).view(-1, 1)
                 embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
 
         for i, embedding in enumerate(self.field_feature_embeddings):
             embedding_vectors = torch.cat([embedding_vectors, embedding(x[:, i])], dim=1)
 
         return embedding_vectors.detach()
-#
-#
-# class Fature_embedding(nn.Module):
+
+
+# class Feature_Embedding(nn.Module):
 #     def __init__(self, feature_numbers, field_nums, latent_dims, campaign_id):
-#         super(Fature_embedding, self).__init__()
+#         super(Feature_Embedding, self).__init__()
 #         self.field_nums = field_nums
 #         self.latent_dims = latent_dims
 #         self.campaign_id = campaign_id
@@ -198,7 +198,7 @@ class DDPG():
         self.memory_state = np.zeros((self.memory_size, self.field_nums))
         self.memory_action_reward = np.zeros((self.memory_size, self.action_nums + 1))
 
-        self.embedding_layer = Fature_embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
 
         self.Actor = Actor(self.input_dims, self.action_nums).to(self.device)
         self.Critic = Critic(self.input_dims, self.action_nums).to(self.device)
@@ -286,6 +286,8 @@ class DDPG():
         self.optimizer_a.step()
 
         a_loss_r = a_loss.item()
+
+        torch.cuda.empty_cache()
 
         return a_loss_r
 

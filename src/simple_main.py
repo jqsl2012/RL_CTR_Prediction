@@ -110,7 +110,7 @@ def train(model, FFM, data_loader, device, ou_noise_obj, exploration_rate):
 
         actions = model.choose_action(features) # ctrs
 
-        y_preds = torch.FloatTensor(np.clip(actions + ou_noise * exploration_rate, 1e-5, 1)).to(device)
+        y_preds = torch.FloatTensor(np.clip(np.random.normal(actions, exploration_rate), 1e-5, 1)).to(device)
         rewards = reward_functions(y_preds, features, FFM, labels, device).to(device)
 
         action_rewards = torch.cat([y_preds, rewards], dim=1)

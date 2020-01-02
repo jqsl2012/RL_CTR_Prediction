@@ -15,6 +15,7 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -22,11 +23,17 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-def get_model(feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
-    PG_model = Model.PolicyGradient(feature_nums, field_nums, latent_dims, device=device)
-    DDPG_for_PG_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
-                      campaign_id=campaign_id, batch_size=batch_size, memory_size=memory_size, device=device)
-    return PG_model, DDPG_for_PG_Model
+
+def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
+
+    pg_model = Model.PolicyGradient(feature_nums, field_nums, latent_dims,
+                                    action_nums=action_nums, device=device, campaign_id=campaign_id)
+    ddpg_for_pg_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
+                                               action_nums=action_nums,
+                                               campaign_id=campaign_id, batch_size=batch_size,
+                                               memory_size=memory_size, device=device)
+    return pg_model, ddpg_for_pg_Model
+
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -71,8 +78,9 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
 
     return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
 
+
 def reward_functions(y_preds, features, FFM, labels, device):
-    FFM_preds = FFM(features.cpu()).to(device).detach()
+    FFM_preds = FFM(features).to(device).detach()
 
     reward = 1
     punishment = -1
@@ -83,6 +91,8 @@ def reward_functions(y_preds, features, FFM, labels, device):
     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
 
+    # reward_without_clk = np.abs((punishment / y_preds[without_clk_indexs]).cpu().numpy())
+    # reward_with_clk = (reward / (1 - y_preds[with_clk_indexs])).cpu().numpy()
     reward_without_clk = torch.where(y_preds[without_clk_indexs] >= FFM_preds[without_clk_indexs], tensor_for_noclk * punishment, tensor_for_noclk * reward).cpu().numpy()
     reward_with_clk = torch.where(y_preds[with_clk_indexs] >= FFM_preds[with_clk_indexs], tensor_for_clk * reward, tensor_for_clk * punishment).cpu().numpy()
 
@@ -93,36 +103,111 @@ def reward_functions(y_preds, features, FFM, labels, device):
 
     return return_reward
 
-def train(pg_model, ddpg_for_pg_model, FFM, FM, LR, data_loader, device):
+
+def generate_preds(model_dict, features, actions, prob_weights, device, mode):
+    y_preds = torch.ones(size=[len(features), 1]).to(device)
+    if mode == 'train':
+        prob_weights = torch.softmax(torch.FloatTensor(prob_weights), dim=1).cpu().numpy()
+    sortindex_prob_weights = np.argsort(-prob_weights, axis=1)
+    sort_prob_weights = np.sort(-prob_weights, axis=1)
+
+    pretrain_model_len = len(model_dict) # 有多少个预训练模型
+
+    pretrain_y_preds = {}
+    for i in range(pretrain_model_len):
+        pretrain_y_preds[i] = model_dict[i](features).detach()
+
+    for i in range(pretrain_model_len): # 根据pg_model的action,判断要选择ensemble的数量
+        with_action_indexs = np.where(actions == (i + 1))[0]
+        current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i + 1]
+
+        if i == 0:
+            current_y_preds= torch.ones(size=[len(with_action_indexs), 1]).to(device)
+            for k in range(pretrain_model_len):
+                current_pretrain_y_preds = pretrain_y_preds[k][with_action_indexs]
+                choose_model_indexs = np.where(current_choose_models == k)[0]
+                current_y_preds[choose_model_indexs, :] = current_pretrain_y_preds[choose_model_indexs]
+            y_preds[with_action_indexs, :] = current_y_preds
+        elif i == pretrain_model_len - 1:
+            current_prob_weights = prob_weights[with_action_indexs]
+            current_pretrain_y_preds = np.hstack((
+                pretrain_y_preds[l][with_action_indexs].cpu().numpy() for l in range(pretrain_model_len)
+            ))
+            current_y_preds = torch.FloatTensor(np.sum(np.multiply(current_prob_weights, current_pretrain_y_preds),
+                                                       axis=1)).view(-1, 1).to(device)
+            y_preds[with_action_indexs, :] = current_y_preds
+        else:
+            current_softmax_weights = torch.softmax(
+                torch.FloatTensor(sort_prob_weights[with_action_indexs][:, :i + 1]), dim=1
+            ).cpu().numpy()  # 再进行softmax
+
+            current_row_preds = torch.ones(size=[len(with_action_indexs), i + 1]).to(device)
+            for m in range(i+1):
+                current_row_choose_models = current_choose_models[:, m:m+1]
+                for k in range(pretrain_model_len):
+                    current_pretrain_y_preds = pretrain_y_preds[k][with_action_indexs]
+                    choose_model_indexs = np.where(current_row_choose_models == k)[0]
+
+                    current_row_preds[choose_model_indexs, m:m+1] = current_pretrain_y_preds[choose_model_indexs]
+
+            current_y_preds = torch.FloatTensor(np.sum(np.multiply(current_softmax_weights, current_row_preds.cpu().numpy()), axis=1)).view(-1, 1).to(device)
+            y_preds[with_action_indexs, :] = current_y_preds
+
+    y_preds = torch.sigmoid(y_preds)
+
+    return y_preds, prob_weights
+
+
+def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
     total_loss = 0
     log_intervals = 0
-    for i, (features, labels) in enumerate(data_loader):
+    total_rewards = 0
+    for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-        action = pg_model.choose_action(features)
+        actions = pg_model.choose_action(features)
+        # ou_noise = np.hstack((ou_noise_obj()[:len(features)].reshape(-1, 1) for _ in range(3)))
 
-        ddpg_for_pg_model.embedding_for_DDPG(pg_model)
-        prob_weights = ddpg_for_pg_model.choose_action(features)
+        prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features), exploration_rate))
+        # prob_weights = ddpg_for_pg_model.choose_action(features) + ou_noise
 
-        print(action, prob_weights)
+        y_preds, prob_weights_new = generate_preds(model_dict, features, actions, prob_weights, device, mode='train')
 
-        r = np.ones((len(features), 1))
-        if i == 0:
-            print(features)
-        model.store_transition(features.cpu().numpy(), y, r, i)
+        rewards = reward_functions(y_preds, features, model_dict[0], labels, device).to(device)
 
-        total_loss += 1 # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        pg_model.store_transition(features.cpu().numpy(), actions, rewards.cpu().numpy(), i)
+
+        action_rewards = torch.cat([torch.FloatTensor(prob_weights_new).to(device), rewards], dim=1)
+
+        ddpg_for_pg_model.store_transition(features, action_rewards)
+
+        b_s, b_a, b_r, b_s_ = ddpg_for_pg_model.sample_batch()
+
+        td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_)
+        a_loss = ddpg_for_pg_model.learn_a(b_s)
+        ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Actor, ddpg_for_pg_model.Actor_)
+        ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Critic, ddpg_for_pg_model.Critic_)
+
+        total_loss += td_error # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
         log_intervals += 1
 
-    return total_loss / log_intervals
+        total_rewards += torch.sum(rewards, dim=0)
 
-def test(model, data_loader, loss, device):
+        if log_intervals % 81 == 0:
+            pg_model.learn()
+
+    return total_loss / log_intervals, total_rewards / log_intervals
+
+def test(pg_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            y = model(features)
+            actions = pg_model.choose_best_action(features)
+
+            prob_weights = ddpg_for_pg_model.choose_action(features)
+            y, prob_weights_new = generate_preds(model_dict, features, actions, prob_weights, device, mode='test')
 
             test_loss = loss(y, labels.float())
             targets.extend(labels.tolist()) # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
@@ -132,8 +217,25 @@ def test(model, data_loader, loss, device):
 
     return roc_auc_score(targets, predicts), total_test_loss / intervals
 
+
+def submission(pg_model, ddpg_for_pg_model, model_dict, data_loader, device):
+    targets, predicts = list(), list()
+    with torch.no_grad():
+        for features, labels in data_loader:
+            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+            actions = pg_model.choose_best_action(features)
+
+            prob_weights = ddpg_for_pg_model.choose_action(features)
+            y, prob_weights_new = generate_preds(model_dict, features, actions, prob_weights, device, mode='test')
+
+            targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
+            predicts.extend(y.tolist())
+
+    return predicts, roc_auc_score(targets, predicts)
+
+
 def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate,
-         weight_decay, early_stop_type, batch_size, device, save_param_dir):
+         weight_decay, early_stop_type, batch_size, device, save_param_dir, ou_noise_obj):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
@@ -149,16 +251,27 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM.load_state_dict(torch.load('models/model_params/' + campaign_id + '/FFMbest.pth'))
+    FFM_pretain_params = torch.load('models/model_params/' + campaign_id + '/FFMbest.pth')
+    FFM.load_state_dict(FFM_pretain_params)
 
     FM = p_model.FM(feature_nums, latent_dims)
-    FM.load_state_dict(torch.load('models/model_params/' + campaign_id + '/FMbest.pth'))
+    FM_pretain_params = torch.load('models/model_params/' + campaign_id + '/FMbest.pth')
+    FM.load_state_dict(FM_pretain_params)
 
     LR = p_model.LR(feature_nums)
-    LR.load_state_dict(torch.load('models/model_params/' + campaign_id + '/LRbest.pth'))
+    LR_pretain_params = torch.load('models/model_params/' + campaign_id + '/LRbest.pth')
+    LR.load_state_dict(LR_pretain_params)
+
+    model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    # model_dict = {0: FM.to(device), 1: FFM.to(device)}
+
+    model_dict_len = len(model_dict)
 
     memory_size = round(len(train_data), -6)
-    pg_model, ddpg_for_pg_model = get_model(feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
+    pg_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
+
+    pg_model.load_embedding(FFM_pretain_params)
+    ddpg_for_pg_model.load_embedding(FFM_pretain_params)
 
     loss = nn.BCELoss()
 
@@ -168,23 +281,27 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     is_early_stop = False
 
     start_time = datetime.datetime.now()
+    exploration_rate = 1
     for epoch_i in range(epoch):
         torch.cuda.empty_cache() # 清理无用的cuda中间变量缓存
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss = train(pg_model, ddpg_for_pg_model, FFM, FM, LR, train_data_loader, device)
+        train_average_loss, train_average_rewards = train(pg_model, ddpg_for_pg_model, model_dict, train_data_loader, ou_noise_obj, exploration_rate, device)
 
-        torch.save(model.state_dict(), save_param_dir + model_name + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(pg_model.policy_net.state_dict(), save_param_dir + 'pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
 
-        auc, valid_loss = test(model, valid_data_loader, loss, device)
+        auc, valid_loss = test(pg_model, ddpg_for_pg_model, model_dict, valid_data_loader, loss, device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'validation auc:', auc,
+        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training average rewards',
+              train_average_rewards.cpu().numpy()[0], 'validation auc:', auc,
                'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
+        exploration_rate *= 0.99
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
@@ -193,15 +310,19 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     end_time = datetime.datetime.now()
 
     if is_early_stop:
-        test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
-        load_path = save_param_dir + model_name + str(early_stop_index) + '.pth'
+        test_pg_model, test_ddpg_for_pg_model = get_model(feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
+        load_pg_path = save_param_dir + 'pg_model' + str(early_stop_index) + '.pth'
+        load_ddpg_path = save_param_dir + 'ddpg_for_pg_model' + str(early_stop_index) + '.pth'
 
-        test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
+        test_pg_model.policy_net.load_state_dict(torch.load(load_pg_path, map_location=device))  # 加载最优参数
+        test_ddpg_for_pg_model.Actor.load_state_dict(torch.load(load_ddpg_path, map_location=device))  # 加载最优参数
     else:
-        test_model = model
+        test_pg_model = pg_model
+        test_ddpg_for_pg_model = ddpg_for_pg_model
 
-    auc, test_loss = test(test_model, test_data_loader, loss, device)
-    torch.save(test_model.state_dict(), save_param_dir + model_name + 'best.pth') # 存储最优参数
+    auc, test_loss = test(test_pg_model, test_ddpg_for_pg_model, model_dict, valid_data_loader, loss, device)
+    torch.save(test_pg_model.policy_net.state_dict(), save_param_dir + 'pg_model' + 'best.pth') # 存储最优参数
+    torch.save(test_ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + 'best.pth') # 存储最优参数
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
@@ -209,34 +330,23 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
 
-    days = day_indexs[:, 0]  # 数据集中有的日期
+    # 验证集submission
+    valid_predicts, valid_auc = submission(test_pg_model, test_ddpg_for_pg_model, model_dict, valid_data_loader, device)
+    valid_pred_df = pd.DataFrame(data=valid_predicts)
 
-    day_aucs = []
-    for day in days:
-        current_day_index = day_indexs[days == day]
-        data_index_start = current_day_index[0, 1]
-        data_index_end = current_day_index[0, 2] + 1
+    valid_pred_df.to_csv(submission_path + str(valid_day) + '_test_submission.csv', header=None)
 
-        current_data = torch.tensor(train_fm[data_index_start: data_index_end, 1:]).to(device)
-        y_labels = train_fm[data_index_start: data_index_end, 0]
+    # 测试集submission
+    test_predicts, test_auc = submission(test_pg_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
+    test_pred_df = pd.DataFrame(data=test_predicts)
 
-        with torch.no_grad():
-            y_pred = test_model(current_data).cpu().numpy()
+    test_pred_df.to_csv(submission_path + str(test_day) + '_test_submission.csv', header=None)
 
-            day_aucs.append([day, roc_auc_score(y_labels, y_pred.flatten())])
+    day_aucs = [[valid_day, valid_auc], [test_day, test_auc]]
+    day_aucs_df = pd.DataFrame(data=day_aucs)
+    day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-            y_pred_df = pd.DataFrame(data=y_pred)
-
-            y_pred_df.to_csv(submission_path + str(day) + '_test_submission.csv', header=None)
-
-    with torch.no_grad():
-        train_ctrs = test_model(torch.tensor(train_data[:, 1:]).to(device)).cpu().numpy()
-        train_labels = train_data[:, 0]
-        train_auc = roc_auc_score(train_labels, train_ctrs.flatten())
-
-        day_aucs.append(['train', train_auc])
-        day_aucs_df = pd.DataFrame(data=day_aucs)
-        day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
+    print('\ntest auc:', test_auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
 def eva_stopping(valid_aucs, valid_losses, type): # early stopping
     if type == 'auc':
@@ -258,19 +368,21 @@ if __name__ == '__main__':
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
-    parser.add_argument('--latent_dims', default=10)
+    parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
-    parser.add_argument('--device', default='cpu:0')
+    parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')
 
     args = parser.parse_args()
 
     # 设置随机数种子
     setup_seed(1)
+
+    ou_noise = DDPG_for_PG_model.OrnsteinUhlenbeckNoise(mu=np.zeros(args.batch_size))
 
     main(
         args.data_path,
@@ -286,5 +398,6 @@ if __name__ == '__main__':
         args.early_stop_type,
         args.batch_size,
         args.device,
-        args.save_param_dir
+        args.save_param_dir,
+        ou_noise
     )
