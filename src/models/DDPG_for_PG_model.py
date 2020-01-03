@@ -30,11 +30,11 @@ neural_nums_c_4 = 128
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims, campaign_id):
+    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims):
         super(Actor, self).__init__()
         # self.bn_pg = nn.BatchNorm1d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
 
-        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims, campaign_id)
+        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.fc1 = nn.Linear(input_dims, neural_nums_a_1)
         self.fc1.weight.data.normal_(0, 0.1)
@@ -78,11 +78,11 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims, campaign_id):
+    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims):
         super(Critic, self).__init__()
         # self.bn_pg = nn.BatchNorm1d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
 
-        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims, campaign_id)
+        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.fc_s = nn.Linear(input_dims, neural_nums_c_1_state)
         self.fc_s.weight.data.normal_(0, 0.1)
@@ -172,11 +172,11 @@ class DDPG():
         self.memory_action_reward = torch.zeros(size=[self.memory_size, self.action_nums + 1]).to(self.device)
         self.memory_pg_action = torch.zeros(size=[self.memory_size, 1]).to(self.device)
 
-        self.Actor = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
-        self.Critic = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
+        self.Actor = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+        self.Critic = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
 
-        self.Actor_ = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
-        self.Critic_ = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
+        self.Actor_ = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+        self.Critic_ = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
 
         # 优化器
         self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)

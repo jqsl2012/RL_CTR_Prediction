@@ -27,11 +27,10 @@ import torch.nn as nn
 
 #
 class Feature_Embedding(nn.Module):
-    def __init__(self, feature_numbers, field_nums, latent_dims, campaign_id):
+    def __init__(self, feature_numbers, field_nums, latent_dims):
         super(Feature_Embedding, self).__init__()
         self.field_nums = field_nums
         self.latent_dims = latent_dims
-        self.campaign_id = campaign_id
 
         self.feature_embedding = nn.Embedding(feature_numbers, latent_dims)
 

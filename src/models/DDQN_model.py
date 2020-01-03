@@ -27,7 +27,7 @@ class Net(nn.Module):
         self.field_nums = field_nums
         self.feature_nums = feature_nums
         self.latent_dims = latent_dims
-        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id)
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims)
 
         input_dims = 0
         for i in range(self.field_nums):
@@ -104,7 +104,7 @@ class DoubleDQN:
         self.learn_step_counter = 0
 
         # 将经验池<状态-动作-奖励-下一状态>中的转换组初始化为0
-        self.memory = torch.zeros(size=[self.memory_size, self.field_nums + self.action_nums + 1]).to(self.device)
+        self.memory = torch.zeros(size=[self.memory_size, self.field_nums + 2]).to(self.device)
 
         # 创建target_net（目标神经网络），eval_net（训练神经网络）
         self.eval_net, self.target_net = Net(self.field_nums, self.feature_nums, self.latent_dims, self.action_nums).to(self.device), Net(
@@ -135,26 +135,32 @@ class DoubleDQN:
         self.memory_counter += transition_lens
 
     # 选择动作
-    def choose_action(self, state, exploration_rate):
+    def choose_action(self, states, exploration_rate):
         torch.cuda.empty_cache()
 
-        if np.random.uniform() > exploration_rate:
-            # 让 eval_net 神经网络生成所有 action 的值, 并选择值最大的 action
-            actions_value = self.eval_net.forward(state)
-            action = torch.argsort(-actions_value, dim=1)[:, 0]
-        else:
-            action = np.random.choice(range(1, self.action_nums + 1))
+        actions = torch.LongTensor().to(self.device)
 
-        return action
+        action_values = self.eval_net.forward(states)
+        for action_value in action_values:
+            if np.random.uniform() > exploration_rate:
+                # 让 eval_net 神经网络生成所有 action 的值, 并选择值最大的 action
+                action = torch.unsqueeze(torch.argsort(-action_value)[0] + 1, 0)
+            else:
+                action = torch.randint(low=1, high=self.action_nums+1, size=[1]).to(self.device)
+
+            actions = torch.cat([actions, action])
+
+        # 用矩阵来初始化
+
+        return actions.view(-1, 1)
 
     # 选择最优动作
-    def choose_best_action(self, state):
-        # 统一 state 的 shape (1, size_of_state)
+    def choose_best_action(self, states):
+        action_values = self.eval_net.forward(states)
 
-        actions_value = self.eval_net.forward(state)
-        action = torch.argsort(-actions_value, dim=1)[:, 0]
+        actions = torch.argsort(-action_values, dim=1)[:, 0].view(-1, 1)
 
-        return action
+        return actions
 
     # 定义DQN的学习过程
     def learn(self):
@@ -175,15 +181,16 @@ class DoubleDQN:
         else:
             sample_index = np.random.choice(self.memory_counter, size=self.batch_size, replace=False)
 
-        batch_memory = self.memory[sample_index, :]
+        batch_memory = self.memory[sample_index, :].long()
+
 
         # 获取到q_next（target_net产生）以及q_eval（eval_net产生）
         # 如store_transition函数中存储所示，state存储在[0, feature_nums-1]的位置（即前feature_numbets）
         # state_存储在[feature_nums+1，memory_size]（即后feature_nums的位置）
-        b_s = batch_memory[:, :self.feature_nums]
-        b_a = torch.unsqueeze(batch_memory[:, self.feature_nums: self.feature_nums + self.action_nums + 1], 1).to(self.device)
-        b_r = batch_memory[:, self.feature_nums + self.action_nums + 1].view(-1, 1)
-        b_s_ = batch_memory[:, :self.feature_nums]
+        b_s = batch_memory[:, :self.field_nums]
+        b_a = batch_memory[:, self.field_nums: self.field_nums + 1]
+        b_r = batch_memory[:, self.field_nums + 1].view(-1, 1).float()
+        b_s_ = batch_memory[:, :self.field_nums]
 
         # q_eval w.r.t the action in experience
         q_eval = self.eval_net.forward(b_s).gather(1, b_a - 1)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
@@ -191,9 +198,9 @@ class DoubleDQN:
         # 下一状态s的eval_net值
         q_eval_next = self.eval_net.forward(b_s_)
         max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
-        select_q_next = q_next.gather(1, max_b_a_next).detach()
+        select_q_next = q_next.gather(1, max_b_a_next)
 
-        q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
+        q_target = b_r + self.gamma * select_q_next # shape (batch, 1)
 
         # 训练eval_net
         loss = self.loss_func(q_eval, q_target)

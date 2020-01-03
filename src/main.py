@@ -27,13 +27,13 @@ def setup_seed(seed):
 
 def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
 
-    pg_model = Model.DoubleDQN(feature_nums, field_nums, latent_dims,
-                                    action_nums=action_nums, device=device)
+    ddqn_model = Model.DoubleDQN(feature_nums, field_nums, latent_dims,
+                                    action_nums=action_nums, memory_size=memory_size, batch_size=batch_size, device=device)
     ddpg_for_pg_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
                                                campaign_id=campaign_id, batch_size=batch_size,
                                                memory_size=memory_size, device=device)
-    return pg_model, ddpg_for_pg_Model
+    return ddqn_model, ddpg_for_pg_Model
 
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
@@ -125,7 +125,7 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
     for i in range(pretrain_model_len):
         pretrain_y_preds[i] = model_dict[i](features).detach()
 
-    for i in range(pretrain_model_len): # 根据pg_model的action,判断要选择ensemble的数量
+    for i in range(pretrain_model_len): # 根据ddqn_model的action,判断要选择ensemble的数量
         with_action_indexs = (actions == (i + 1)).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i + 1]
         current_basic_rewards = torch.ones(size=[len(with_action_indexs), 1]).to(device)
@@ -225,66 +225,24 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
     return y_preds, prob_weights.to(device), rewards
 
 
-# def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
-#     total_loss = 0
-#     log_intervals = 0
-#     total_rewards = 0
-#     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
-#         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-#         actions = pg_model.choose_action(features)
-#         # ou_noise = np.hstack((ou_noise_obj()[:len(features)].reshape(-1, 1) for _ in range(3)))
-#
-#         prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features, actions.float()).cpu(), exploration_rate))
-#         # prob_weights = ddpg_for_pg_model.choose_action(features) + ou_noise
-#
-#         y_preds, prob_weights_new, rewards = \
-#             generate_preds(model_dict, features, actions, torch.FloatTensor(prob_weights).to(device), labels, device, mode='train')
-#
-#         # rewards = reward_functions(y_preds, features, model_dict, labels, device)
-#
-#         pg_model.store_transition(features, actions, rewards)
-#
-#         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
-#
-#         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
-#
-#         b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
-#
-#         td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_, b_pg_a)
-#         a_loss = ddpg_for_pg_model.learn_a(b_s, b_pg_a)
-#         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Actor, ddpg_for_pg_model.Actor_)
-#         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Critic, ddpg_for_pg_model.Critic_)
-#
-#         total_loss += td_error # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
-#         log_intervals += 1
-#
-#         total_rewards += torch.sum(rewards, dim=0)
-#
-#         torch.cuda.empty_cache()# 清除缓存
-#
-#         if log_intervals % 81 == 0:
-#             pg_model.learn()
-#
-#     return total_loss / log_intervals, total_rewards / log_intervals
-
-def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
+def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
     total_loss = 0
     log_intervals = 0
     total_rewards = 0
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-        actions = pg_model.choose_action(features, exploration_rate)
+        actions = ddqn_model.choose_action(features, exploration_rate)
 
-        prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features, actions.float()).cpu(), exploration_rate))
+        prob_weights = torch.abs(torch.normal(ddpg_for_pg_model.choose_action(features, actions.float()).cpu(), exploration_rate))
 
         y_preds, prob_weights_new, rewards = \
-            generate_preds(model_dict, features, actions, torch.FloatTensor(prob_weights).to(device), labels, device, mode='train')
+            generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='train')
 
-        pg_model.store_transition(torch.cat([features, actions, rewards], dim=1))
+        ddqn_model.store_transition(torch.cat([features, actions, rewards.long()], dim=1))
         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
 
-        pg_model.learn()
+        ddqn_model.learn()
 
         b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
         td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_, b_pg_a)
@@ -301,14 +259,14 @@ def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, ex
 
     return total_loss / log_intervals, total_rewards / log_intervals
 
-def test(pg_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
+def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            actions = pg_model.choose_best_action(features)
+            actions = ddqn_model.choose_best_action(features)
 
             prob_weights = ddpg_for_pg_model.choose_action(features, actions.float())
 
@@ -323,12 +281,12 @@ def test(pg_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
     return roc_auc_score(targets, predicts), total_test_loss / intervals
 
 
-def submission(pg_model, ddpg_for_pg_model, model_dict, data_loader, device):
+def submission(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, device):
     targets, predicts = list(), list()
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            actions = pg_model.choose_best_action(features)
+            actions = ddqn_model.choose_best_action(features)
             prob_weights = ddpg_for_pg_model.choose_action(features, actions.float())
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
@@ -378,9 +336,9 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     model_dict_len = len(model_dict)
 
     memory_size = round(len(train_data), -6)
-    pg_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
+    ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
-    # pg_model.load_embedding(FM_pretain_params)
+    # ddqn_model.load_embedding(FM_pretain_params)
     # ddpg_for_pg_model.load_embedding(FM_pretain_params)
 
     loss = nn.BCELoss()
@@ -397,12 +355,12 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss, train_average_rewards = train(pg_model, ddpg_for_pg_model, model_dict, train_data_loader, ou_noise_obj, exploration_rate, device)
+        train_average_loss, train_average_rewards = train(ddqn_model, ddpg_for_pg_model, model_dict, train_data_loader, ou_noise_obj, exploration_rate, device)
 
-        torch.save(pg_model.policy_net.state_dict(), save_param_dir + 'pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(ddqn_model.eval_net.state_dict(), save_param_dir + 'ddqn_model' + str(np.mod(epoch_i, 5)) + '.pth')
         torch.save(ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
 
-        auc, valid_loss = test(pg_model, ddpg_for_pg_model, model_dict, valid_data_loader, loss, device)
+        auc, valid_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, valid_data_loader, loss, device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
 
@@ -420,17 +378,17 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     end_time = datetime.datetime.now()
 
     if is_early_stop:
-        test_pg_model, test_ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
-        load_pg_path = save_param_dir + 'pg_model' + str(early_stop_index) + '.pth'
+        test_ddqn_model, test_ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
+        load_pg_path = save_param_dir + 'ddqn_model' + str(early_stop_index) + '.pth'
         load_ddpg_path = save_param_dir + 'ddpg_for_pg_model' + str(early_stop_index) + '.pth'
 
-        test_pg_model.policy_net.load_state_dict(torch.load(load_pg_path, map_location=device))  # 加载最优参数
+        test_ddqn_model.eval_net.load_state_dict(torch.load(load_pg_path, map_location=device))  # 加载最优参数
         test_ddpg_for_pg_model.Actor.load_state_dict(torch.load(load_ddpg_path, map_location=device))  # 加载最优参数
     else:
-        test_pg_model = pg_model
+        test_ddqn_model = ddqn_model
         test_ddpg_for_pg_model = ddpg_for_pg_model
 
-    auc, test_loss = test(test_pg_model, test_ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
+    auc, test_loss = test(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
     submission_path = data_path + dataset_name + campaign_id + model_name + '/' # ctr 预测结果存放文件夹位置
@@ -438,13 +396,13 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         os.mkdir(submission_path)
 
     # 验证集submission
-    valid_predicts, valid_auc = submission(test_pg_model, test_ddpg_for_pg_model, model_dict, valid_data_loader, device)
+    valid_predicts, valid_auc = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, valid_data_loader, device)
     valid_pred_df = pd.DataFrame(data=valid_predicts)
 
     valid_pred_df.to_csv(submission_path + str(valid_day) + '_test_submission.csv', header=None)
 
     # 测试集submission
-    test_predicts, test_auc = submission(test_pg_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
+    test_predicts, test_auc = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
     test_pred_df = pd.DataFrame(data=test_predicts)
 
     test_pred_df.to_csv(submission_path + str(test_day) + '_test_submission.csv', header=None)
@@ -453,7 +411,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     day_aucs_df = pd.DataFrame(data=day_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-    torch.save(test_pg_model.policy_net.state_dict(), save_param_dir + 'pg_model' + 'best.pth')  # 存储最优参数
+    torch.save(test_ddqn_model.eval_net.state_dict(), save_param_dir + 'ddqn_model' + 'best.pth')  # 存储最优参数
     torch.save(test_ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + 'best.pth')  # 存储最优参数
 
 
