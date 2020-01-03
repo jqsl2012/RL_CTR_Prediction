@@ -14,7 +14,7 @@ import src.models.creat_data as Data
 import torch
 import torch.nn as nn
 import torch.utils.data
-
+np.seterr(all='raise')
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -78,38 +78,45 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
 
     return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
 
+#
+# def reward_functions(y_preds, features, model_dict, labels, device):
+#     model_dict_preds = torch.FloatTensor().to(device)
+#     for i in range(len(model_dict)):
+#         model_dict_preds = torch.cat([model_dict_preds, model_dict[i](features)], dim=1)
+#     average_preds = model_dict_preds.mean(dim=1).view(-1, 1)
+#
+#     reward = 1
+#     punishment = -1
+#
+#     with_clk_indexs = (labels == 1).nonzero()[:, 0]
+#     without_clk_indexs = (labels == 0).nonzero()[:, 0]
+#
+#     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
+#     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
+#
+#     reward_without_clk = torch.where(y_preds[without_clk_indexs] >= average_preds[without_clk_indexs],
+#                                      tensor_for_noclk * punishment,
+#                                      tensor_for_noclk * reward).cpu().numpy()
+#     reward_with_clk = torch.where(y_preds[with_clk_indexs] >= average_preds[with_clk_indexs],
+#                                   tensor_for_clk * reward,
+#                                   tensor_for_clk * punishment).cpu().numpy()
+#
+#     for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
+#         reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
+#
+#     return_reward = torch.FloatTensor(reward_without_clk).view(-1, 1)
+#
+#     return return_reward.to(device)
 
-def reward_functions(y_preds, features, FFM, labels, device):
-    FFM_preds = FFM(features).to(device).detach()
 
-    reward = 1
-    punishment = -1
-
-    with_clk_indexs = (labels == 1).nonzero()[:, 0]
-    without_clk_indexs = (labels == 0).nonzero()[:, 0]
-
-    tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
-    tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
-
-    # reward_without_clk = np.abs((punishment / y_preds[without_clk_indexs]).cpu().numpy())
-    # reward_with_clk = (reward / (1 - y_preds[with_clk_indexs])).cpu().numpy()
-    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= FFM_preds[without_clk_indexs], tensor_for_noclk * punishment, tensor_for_noclk * reward).cpu().numpy()
-    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= FFM_preds[with_clk_indexs], tensor_for_clk * reward, tensor_for_clk * punishment).cpu().numpy()
-
-    for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
-        reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
-
-    return_reward = torch.FloatTensor(reward_without_clk).view(-1, 1)
-
-    return return_reward
-
-
-def generate_preds(model_dict, features, actions, prob_weights, device, mode):
+def generate_preds(model_dict, features, actions, prob_weights, labels, device, mode):
     y_preds = torch.ones(size=[len(features), 1]).to(device)
+    rewards = torch.ones(size=[len(features), 1]).to(device)
+
     if mode == 'train':
-        prob_weights = torch.softmax(torch.FloatTensor(prob_weights), dim=1).cpu().numpy()
-    sortindex_prob_weights = np.argsort(-prob_weights, axis=1)
-    sort_prob_weights = np.sort(-prob_weights, axis=1)
+        prob_weights = torch.softmax(prob_weights, dim=1)
+
+    sort_prob_weights, sortindex_prob_weights = torch.sort(-prob_weights, dim=1)
 
     pretrain_model_len = len(model_dict) # 有多少个预训练模型
 
@@ -118,44 +125,103 @@ def generate_preds(model_dict, features, actions, prob_weights, device, mode):
         pretrain_y_preds[i] = model_dict[i](features).detach()
 
     for i in range(pretrain_model_len): # 根据pg_model的action,判断要选择ensemble的数量
-        with_action_indexs = np.where(actions == (i + 1))[0]
+        with_action_indexs = (actions == (i + 1)).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i + 1]
+        current_basic_rewards = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+
+        current_with_clk_indexs = (labels[with_action_indexs] == 1).nonzero()[:, 0]
+        current_without_clk_indexs = (labels[with_action_indexs] == 0).nonzero()[:, 0]
 
         if i == 0:
-            current_y_preds= torch.ones(size=[len(with_action_indexs), 1]).to(device)
+            current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
             for k in range(pretrain_model_len):
                 current_pretrain_y_preds = pretrain_y_preds[k][with_action_indexs]
-                choose_model_indexs = np.where(current_choose_models == k)[0]
+                choose_model_indexs = (current_choose_models == k).nonzero()[:, 0]
                 current_y_preds[choose_model_indexs, :] = current_pretrain_y_preds[choose_model_indexs]
             y_preds[with_action_indexs, :] = current_y_preds
+
+            with_clk_rewards = torch.where(
+                current_y_preds[current_with_clk_indexs] >= pretrain_y_preds[pretrain_model_len - 1][with_action_indexs][
+                    current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs] * -1
+            )
+
+            without_clk_rewards = torch.where(
+                current_y_preds[current_without_clk_indexs] <= pretrain_y_preds[pretrain_model_len - 1][with_action_indexs][
+                    current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs] * -1
+            )
+
+            current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
+            current_basic_rewards[current_without_clk_indexs] = without_clk_rewards
+
+            rewards[with_action_indexs, :] = current_basic_rewards
         elif i == pretrain_model_len - 1:
-            current_prob_weights = prob_weights[with_action_indexs]
-            current_pretrain_y_preds = np.hstack((
-                pretrain_y_preds[l][with_action_indexs].cpu().numpy() for l in range(pretrain_model_len)
-            ))
-            current_y_preds = torch.FloatTensor(np.sum(np.multiply(current_prob_weights, current_pretrain_y_preds),
-                                                       axis=1)).view(-1, 1).to(device)
+            current_prob_weights = prob_weights[with_action_indexs].to(device)
+            current_pretrain_y_preds = torch.cat([
+                pretrain_y_preds[l][with_action_indexs] for l in range(pretrain_model_len)
+            ], dim=1)
+            current_y_preds = torch.sum(torch.mul(current_prob_weights, current_pretrain_y_preds), dim=1).view(-1, 1)
+
             y_preds[with_action_indexs, :] = current_y_preds
+
+            with_clk_rewards = torch.where(
+                current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
+                    current_with_clk_indexs].mean(dim=1).view(-1, 1),
+                current_basic_rewards[current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs] * -1
+            )
+
+            without_clk_rewards = torch.where(
+                current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
+                    current_without_clk_indexs].mean(dim=1).view(-1, 1),
+                current_basic_rewards[current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs] * -1
+            )
+
+            current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
+            current_basic_rewards[current_without_clk_indexs] = without_clk_rewards
+
+            rewards[with_action_indexs, :] = current_basic_rewards
         else:
             current_softmax_weights = torch.softmax(
-                torch.FloatTensor(sort_prob_weights[with_action_indexs][:, :i + 1]), dim=1
-            ).cpu().numpy()  # 再进行softmax
+                sort_prob_weights[with_action_indexs][:, :i + 1], dim=1
+            ).to(device)  # 再进行softmax
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i + 1]).to(device)
             for m in range(i+1):
                 current_row_choose_models = current_choose_models[:, m:m+1]
                 for k in range(pretrain_model_len):
                     current_pretrain_y_preds = pretrain_y_preds[k][with_action_indexs]
-                    choose_model_indexs = np.where(current_row_choose_models == k)[0]
+                    choose_model_indexs = (current_row_choose_models == k).nonzero()[:, 0]
 
                     current_row_preds[choose_model_indexs, m:m+1] = current_pretrain_y_preds[choose_model_indexs]
 
-            current_y_preds = torch.FloatTensor(np.sum(np.multiply(current_softmax_weights, current_row_preds.cpu().numpy()), axis=1)).view(-1, 1).to(device)
+            current_y_preds = torch.sum(torch.mul(current_softmax_weights, current_row_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
 
-    y_preds = torch.sigmoid(y_preds)
+            with_clk_rewards = torch.where(
+                current_y_preds[current_with_clk_indexs] >= current_row_preds[
+                    current_with_clk_indexs].mean(dim=1).view(-1, 1),
+                current_basic_rewards[current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs] * -1
+            )
 
-    return y_preds, prob_weights
+            without_clk_rewards = torch.where(
+                current_y_preds[current_without_clk_indexs] <= current_row_preds[
+                    current_without_clk_indexs].mean(dim=1).view(-1, 1),
+                current_basic_rewards[current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs] * -1
+            )
+
+            current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
+            current_basic_rewards[current_without_clk_indexs] = without_clk_rewards
+
+            rewards[with_action_indexs, :] = current_basic_rewards
+
+    return y_preds, prob_weights.to(device), rewards
 
 
 def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
@@ -167,23 +233,24 @@ def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, ex
         actions = pg_model.choose_action(features)
         # ou_noise = np.hstack((ou_noise_obj()[:len(features)].reshape(-1, 1) for _ in range(3)))
 
-        prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features), exploration_rate))
+        prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features, actions.float()).cpu(), exploration_rate))
         # prob_weights = ddpg_for_pg_model.choose_action(features) + ou_noise
 
-        y_preds, prob_weights_new = generate_preds(model_dict, features, actions, prob_weights, device, mode='train')
+        y_preds, prob_weights_new, rewards = \
+            generate_preds(model_dict, features, actions, torch.FloatTensor(prob_weights).to(device), labels, device, mode='train')
 
-        rewards = reward_functions(y_preds, features, model_dict[0], labels, device).to(device)
+        # rewards = reward_functions(y_preds, features, model_dict, labels, device)
 
-        pg_model.store_transition(features.cpu().numpy(), actions, rewards.cpu().numpy(), i)
+        pg_model.store_transition(features, actions, rewards)
 
-        action_rewards = torch.cat([torch.FloatTensor(prob_weights_new).to(device), rewards], dim=1)
+        action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
 
-        ddpg_for_pg_model.store_transition(features, action_rewards)
+        ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
 
-        b_s, b_a, b_r, b_s_ = ddpg_for_pg_model.sample_batch()
+        b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
 
-        td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_)
-        a_loss = ddpg_for_pg_model.learn_a(b_s)
+        td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_, b_pg_a)
+        a_loss = ddpg_for_pg_model.learn_a(b_s, b_pg_a)
         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Actor, ddpg_for_pg_model.Actor_)
         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Critic, ddpg_for_pg_model.Critic_)
 
@@ -191,6 +258,8 @@ def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, ex
         log_intervals += 1
 
         total_rewards += torch.sum(rewards, dim=0)
+
+        torch.cuda.empty_cache()# 清除缓存
 
         if log_intervals % 81 == 0:
             pg_model.learn()
@@ -206,8 +275,9 @@ def test(pg_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             actions = pg_model.choose_best_action(features)
 
-            prob_weights = ddpg_for_pg_model.choose_action(features)
-            y, prob_weights_new = generate_preds(model_dict, features, actions, prob_weights, device, mode='test')
+            prob_weights = ddpg_for_pg_model.choose_action(features, actions.float())
+
+            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
             targets.extend(labels.tolist()) # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
@@ -224,9 +294,8 @@ def submission(pg_model, ddpg_for_pg_model, model_dict, data_loader, device):
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             actions = pg_model.choose_best_action(features)
-
-            prob_weights = ddpg_for_pg_model.choose_action(features)
-            y, prob_weights_new = generate_preds(model_dict, features, actions, prob_weights, device, mode='test')
+            prob_weights = ddpg_for_pg_model.choose_action(features, actions.float())
+            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
@@ -251,18 +320,24 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretain_params = torch.load('models/model_params/' + campaign_id + '/FFMbest.pth')
+    FFM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FFMbest.pth')
     FFM.load_state_dict(FFM_pretain_params)
 
     FM = p_model.FM(feature_nums, latent_dims)
-    FM_pretain_params = torch.load('models/model_params/' + campaign_id + '/FMbest.pth')
+    FM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FMbest.pth')
     FM.load_state_dict(FM_pretain_params)
 
     LR = p_model.LR(feature_nums)
-    LR_pretain_params = torch.load('models/model_params/' + campaign_id + '/LRbest.pth')
+    LR_pretain_params = torch.load('models/model_params/' + campaign_id + 'LRbest.pth')
     LR.load_state_dict(LR_pretain_params)
 
-    model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    WandD_pretrain_params = torch.load('models/model_params/' + campaign_id + 'W&Dbest.pth')
+    WandD.load_state_dict(WandD_pretrain_params)
+
+    # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device), 3: WandD.to(device)}
+    model_dict = {0: FM.to(device), 1: WandD.to(device), 2: FFM.to(device)}
+
     # model_dict = {0: FM.to(device), 1: FFM.to(device)}
 
     model_dict_len = len(model_dict)
@@ -270,8 +345,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     memory_size = round(len(train_data), -6)
     pg_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
-    pg_model.load_embedding(FFM_pretain_params)
-    ddpg_for_pg_model.load_embedding(FFM_pretain_params)
+    # pg_model.load_embedding(FM_pretain_params)
+    # ddpg_for_pg_model.load_embedding(FM_pretain_params)
 
     loss = nn.BCELoss()
 
@@ -301,7 +376,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
               train_average_rewards.cpu().numpy()[0], 'validation auc:', auc,
                'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.99
+        exploration_rate *= 0.95
         if eva_stopping(valid_aucs, valid_losses, early_stop_type):
             early_stop_index = np.mod(epoch_i - 4, 5)
             is_early_stop = True
@@ -310,7 +385,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     end_time = datetime.datetime.now()
 
     if is_early_stop:
-        test_pg_model, test_ddpg_for_pg_model = get_model(feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
+        test_pg_model, test_ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
         load_pg_path = save_param_dir + 'pg_model' + str(early_stop_index) + '.pth'
         load_ddpg_path = save_param_dir + 'ddpg_for_pg_model' + str(early_stop_index) + '.pth'
 
@@ -348,6 +423,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     print('\ntest auc:', test_auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
+
 def eva_stopping(valid_aucs, valid_losses, type): # early stopping
     if type == 'auc':
         if len(valid_aucs) > 5:
@@ -367,12 +443,12 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM')
+    parser.add_argument('--model_name', default='PG_DDPG', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
-    parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
+    parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='models/model_params/')

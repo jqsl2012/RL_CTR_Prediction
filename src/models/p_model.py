@@ -119,24 +119,27 @@ class WideAndDeep(nn.Module):
 
         input_dims = self.field_nums * self.latent_dims
         layers = list()
-        for i in range(2):
-            layers.append(nn.Linear(input_dims, self.latent_dims))
-            layers.append(nn.BatchNorm1d(self.latent_dims))
+
+        neural_nums = 1024
+        for i in range(4):
+            layers.append(nn.Linear(input_dims, neural_nums))
+            layers.append(nn.BatchNorm1d(neural_nums))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=0.2))
-            input_dims = self.latent_dims
+            input_dims = neural_nums
+            neural_nums = int(neural_nums / 2)
 
         layers.append(nn.Linear(input_dims, 1))
         self.mlp = nn.Sequential(*layers)
 
-    def forward(self, input):
+    def forward(self, x):
         """
         :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
         :return: pctrs
         """
-        embedding_input = self.embedding(input)
+        embedding_input = self.embedding(x)
 
-        out = self.bias + self.linear(input) + self.mlp(embedding_input.view(-1, self.field_nums * self.latent_dims))
+        out = self.bias + torch.sum(self.linear(x), dim=1) + self.mlp(embedding_input.view(-1, self.field_nums * self.latent_dims))
 
         return torch.sigmoid(out)
 
