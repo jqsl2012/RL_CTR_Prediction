@@ -429,10 +429,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         test_pg_model = pg_model
         test_ddpg_for_pg_model = ddpg_for_pg_model
 
-    auc, test_loss = test(test_pg_model, test_ddpg_for_pg_model, model_dict, valid_data_loader, loss, device)
-    torch.save(test_pg_model.policy_net.state_dict(), save_param_dir + 'pg_model' + 'best.pth') # 存储最优参数
-    torch.save(test_ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + 'best.pth') # 存储最优参数
-
+    auc, test_loss = test(test_pg_model, test_ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
     submission_path = data_path + dataset_name + campaign_id + model_name + '/' # ctr 预测结果存放文件夹位置
@@ -455,7 +452,8 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     day_aucs_df = pd.DataFrame(data=day_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-    print('\ntest auc:', test_auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
+    torch.save(test_pg_model.policy_net.state_dict(), save_param_dir + 'pg_model' + 'best.pth')  # 存储最优参数
+    torch.save(test_ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + 'best.pth')  # 存储最优参数
 
 
 def eva_stopping(valid_aucs, valid_losses, type): # early stopping
