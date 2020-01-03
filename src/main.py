@@ -6,7 +6,8 @@ import os
 import argparse
 import random
 from sklearn.metrics import roc_auc_score
-import src.models.PG_model as Model
+# import src.models.PG_model as Model
+import src.models.DDQN_model as Model
 import src.models.p_model as p_model
 import src.models.DDPG_for_PG_model as DDPG_for_PG_model
 import src.models.creat_data as Data
@@ -26,8 +27,8 @@ def setup_seed(seed):
 
 def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
 
-    pg_model = Model.PolicyGradient(feature_nums, field_nums, latent_dims,
-                                    action_nums=action_nums, device=device, campaign_id=campaign_id)
+    pg_model = Model.DoubleDQN(feature_nums, field_nums, latent_dims,
+                                    action_nums=action_nums, device=device)
     ddpg_for_pg_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
                                                campaign_id=campaign_id, batch_size=batch_size,

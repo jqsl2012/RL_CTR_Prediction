@@ -4,33 +4,6 @@ import torch.utils.data
 
 import numpy as np
 
-class mlp(nn.Module):
-    def __init__(self,
-                 field_nums,
-                 latent_dims,
-                 first_layer_neurons=1024):
-        super(mlp, self).__init__()
-        self.field_nums = field_nums
-        self.latent_dims = latent_dims
-        self.neuron_nums = first_layer_neurons
-
-        deep_input_dims = self.field_nums * self.latent_dims
-        layers = list()
-
-        for i in range(4):
-            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
-            layers.append(nn.BatchNorm1d(self.neuron_nums))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
-            deep_input_dims = self.neuron_nums
-            self.neuron_nums = int(self.neuron_nums / 2)
-
-        layers.append(nn.Linear(deep_input_dims, 1))
-        self.mlp = nn.Sequential(*layers)
-
-    def forward(self, x):
-        return self.mlp(x)
-
 # 传统的预测点击率模型
 class LR(nn.Module):
     def __init__(self,
@@ -145,7 +118,19 @@ class WideAndDeep(nn.Module):
 
         self.embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        self.mlp = mlp(self.field_nums, self.latent_dims)
+        deep_input_dims = self.field_nums * self.latent_dims
+        layers = list()
+
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
+            layers.append(nn.BatchNorm1d(self.neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            deep_input_dims = self.neuron_nums
+            self.neuron_nums = int(self.neuron_nums / 2)
+
+        layers.append(nn.Linear(deep_input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
 
     def forward(self, x):
         """
@@ -175,7 +160,19 @@ class InnerPNN(nn.Module):
 
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        self.mlp = mlp(self.field_nums * (self.field_nums - 1) // 2, self.latent_dims)
+        deep_input_dims = self.field_nums * (self.field_nums - 1) // 2
+        layers = list()
+
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
+            layers.append(nn.BatchNorm1d(self.neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            deep_input_dims = self.neuron_nums
+            self.neuron_nums = int(self.neuron_nums / 2)
+
+        layers.append(nn.Linear(deep_input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
 
     def load_embedding(self, pretrain_params):
         self.feature_embedding.weight.data.copy_(
@@ -222,7 +219,19 @@ class OuterPNN(nn.Module):
 
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        self.mlp = mlp(self.field_nums * (self.field_nums - 1) // 2, self.latent_dims)
+        deep_input_dims = self.field_nums * (self.field_nums - 1) // 2
+        layers = list()
+
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
+            layers.append(nn.BatchNorm1d(self.neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            deep_input_dims = self.neuron_nums
+            self.neuron_nums = int(self.neuron_nums / 2)
+
+        layers.append(nn.Linear(deep_input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
 
     def load_embedding(self, pretrain_params):
         self.feature_embedding.weight.data.copy_(
@@ -267,7 +276,19 @@ class DeepFM(nn.Module):
         nn.init.xavier_normal_(self.feature_embedding_fm.weight.data)
 
         # MLP
-        self.mlp = mlp(feature_nums, latent_dims)
+        deep_input_dims = self.field_nums * self.latent_dims
+        layers = list()
+
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
+            layers.append(nn.BatchNorm1d(self.neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            deep_input_dims = self.neuron_nums
+            self.neuron_nums = int(self.neuron_nums / 2)
+
+        layers.append(nn.Linear(deep_input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
 
     def to_fm(self, x):
         """
@@ -311,7 +332,19 @@ class FNN(nn.Module):
 
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        self.mlp = mlp(feature_nums, latent_dims)
+        deep_input_dims = self.field_nums * self.latent_dims
+        layers = list()
+
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
+            layers.append(nn.BatchNorm1d(self.neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            deep_input_dims = self.neuron_nums
+            self.neuron_nums = int(self.neuron_nums / 2)
+
+        layers.append(nn.Linear(deep_input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
 
     def load_embedding(self, pretrain_params):
         self.feature_embedding.weight.data.copy_(
