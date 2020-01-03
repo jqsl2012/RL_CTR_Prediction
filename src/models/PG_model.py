@@ -1,11 +1,19 @@
 import numpy as np
+import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from src.models.Feature_embedding import Feature_Embedding
 np.seterr(all='raise')
 
-np.random.seed(1)
+def setup_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+# 设置随机数种子
+setup_seed(1)
 
 neuron_nums_1 = 100
 neuron_nums_2 = 512

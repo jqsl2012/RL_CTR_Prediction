@@ -31,7 +31,10 @@ def get_model(model_name, feature_nums, field_nums, latent_dims):
         return Model.FFM(feature_nums, field_nums, latent_dims)
     elif model_name == 'W&D':
         return Model.WideAndDeep(feature_nums, field_nums, latent_dims)
-
+    elif model_name == 'DeepFM':
+        return Model.DeepFM(feature_nums, field_nums, latent_dims)
+    elif model_name == 'FNN':
+        return Model.FNN(feature_nums, field_nums, latent_dims)
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -148,6 +151,10 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
+
+    if model_name == 'IPNN' or 'OPNN' or 'FNN':
+        FM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FMbest.pth')
+        model.load_embedding(FM_pretain_params)
 
     loss = nn.BCELoss()
     optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)

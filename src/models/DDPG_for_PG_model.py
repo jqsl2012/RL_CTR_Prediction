@@ -168,9 +168,9 @@ class DDPG():
         input_dims += self.latent_dims * self.field_nums  # 15+75
         self.input_dims = input_dims
 
-        self.memory_state = torch.zeros(size=[self.memory_size, self.field_nums]).to(device)
-        self.memory_action_reward = torch.zeros(size=[self.memory_size, self.action_nums + 1]).to(device)
-        self.memory_pg_action = torch.zeros(size=[self.memory_size, 1]).to(device)
+        self.memory_state = torch.zeros(size=[self.memory_size, self.field_nums]).to(self.device)
+        self.memory_action_reward = torch.zeros(size=[self.memory_size, self.action_nums + 1]).to(self.device)
+        self.memory_pg_action = torch.zeros(size=[self.memory_size, 1]).to(self.device)
 
         self.Actor = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
         self.Critic = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)

@@ -2,8 +2,36 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 
-# 传统的预测点击率模型
+import numpy as np
 
+class mlp(nn.Module):
+    def __init__(self,
+                 field_nums,
+                 latent_dims,
+                 first_layer_neurons=1024):
+        super(mlp, self).__init__()
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
+        self.neuron_nums = first_layer_neurons
+
+        deep_input_dims = self.field_nums * self.latent_dims
+        layers = list()
+
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, self.neuron_nums))
+            layers.append(nn.BatchNorm1d(self.neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            deep_input_dims = self.neuron_nums
+            self.neuron_nums = int(self.neuron_nums / 2)
+
+        layers.append(nn.Linear(deep_input_dims, 1))
+        self.mlp = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.mlp(x)
+
+# 传统的预测点击率模型
 class LR(nn.Module):
     def __init__(self,
                  feature_nums,
@@ -22,7 +50,6 @@ class LR(nn.Module):
         pctrs = torch.sigmoid(out)
 
         return pctrs
-
 
 class FM(nn.Module):
     def __init__(self,
@@ -51,7 +78,7 @@ class FM(nn.Module):
 
         ix = torch.sum(square_of_sum - sum_of_square, dim=1, keepdim=True) # 若keepdim值为True,则在输出张量中,除了被操作的dim维度值降为1,其它维度与输入张量input相同。
 
-        out = self.bias + torch.sum(self.linear(linear_x), dim=1) + ix
+        out = self.bias + torch.sum(self.linear(linear_x), dim=1) + ix * 0.5
         pctrs = torch.sigmoid(out)
 
         return pctrs
@@ -82,8 +109,8 @@ class FFM(nn.Module):
 
     def forward(self, x):
         """
-        :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
-        :return: pctrs
+            :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+            :return: pctrs
         """
         x_embedding = [self.field_feature_embeddings[i](x) for i in range(self.field_nums)]
         second_x = list()
@@ -100,6 +127,7 @@ class FFM(nn.Module):
 
         return pctrs
 
+# 基于深度学习的点击率预测模型
 class WideAndDeep(nn.Module):
     def __init__(self,
                  feature_nums,
@@ -111,26 +139,13 @@ class WideAndDeep(nn.Module):
         self.field_nums = field_nums
         self.latent_dims = latent_dims
 
-        self.linear = nn.Embedding(feature_nums, output_dim)
+        self.linear = nn.Embedding(self.feature_nums, output_dim)
         nn.init.xavier_normal_(self.linear.weight.data)
         self.bias = nn.Parameter(torch.zeros((output_dim,)))
 
         self.embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        input_dims = self.field_nums * self.latent_dims
-        layers = list()
-
-        neural_nums = 1024
-        for i in range(4):
-            layers.append(nn.Linear(input_dims, neural_nums))
-            layers.append(nn.BatchNorm1d(neural_nums))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
-            input_dims = neural_nums
-            neural_nums = int(neural_nums / 2)
-
-        layers.append(nn.Linear(input_dims, 1))
-        self.mlp = nn.Sequential(*layers)
+        self.mlp = mlp(self.field_nums, self.latent_dims)
 
     def forward(self, x):
         """
@@ -142,6 +157,180 @@ class WideAndDeep(nn.Module):
         out = self.bias + torch.sum(self.linear(x), dim=1) + self.mlp(embedding_input.view(-1, self.field_nums * self.latent_dims))
 
         return torch.sigmoid(out)
+
+class InnerPNN(nn.Module):
+    def __init__(self,
+                 feature_nums,
+                 field_nums,
+                 latent_dims,
+                 output_dim=1):
+        super(InnerPNN, self).__init__()
+        self.feature_nums = feature_nums
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
+
+        self.linear = nn.Embedding(self.feature_nums, output_dim)
+        nn.init.xavier_normal_(self.linear.weight.data)
+        self.bias = nn.Parameter(torch.zeros((output_dim,)))
+
+        self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
+
+        self.mlp = mlp(self.field_nums * (self.field_nums - 1) // 2, self.latent_dims)
+
+    def load_embedding(self, pretrain_params):
+        self.feature_embedding.weight.data.copy_(
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu())
+            )
+        )
+
+    def forward(self, x):
+        """
+            :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+            :return: pctrs
+        """
+        embedding_x = self.feature_embedding(x)
+
+        hadamard_vetors = torch.FloatTensor().cuda()
+        for i in range(self.field_nums - 1):
+            for j in range(i + 1, self.field_nums):
+                hadamard_product = torch.mul(embedding_x[:, i], embedding_x[:, j])
+                hadamard_vetors = torch.cat([hadamard_vetors, hadamard_product], dim=1)
+
+        # 內积之和
+        cross_term = torch.sum(hadamard_vetors, dim=1)
+
+        cat_x = torch.cat([embedding_x.view(-1, self.field_nums * self.latent_dims), cross_term], dim=1)
+        out = self.mlp(cat_x)
+
+        return torch.sigmoid(out)
+
+class OuterPNN(nn.Module):
+    def __init__(self,
+                 feature_nums,
+                 field_nums,
+                 latent_dims,
+                 output_dim=1):
+        super(OuterPNN, self).__init__()
+        self.feature_nums = feature_nums
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
+
+        self.linear = nn.Embedding(self.feature_nums, output_dim)
+        nn.init.xavier_normal_(self.linear.weight.data)
+        self.bias = nn.Parameter(torch.zeros((output_dim,)))
+
+        self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
+
+        self.mlp = mlp(self.field_nums * (self.field_nums - 1) // 2, self.latent_dims)
+
+    def load_embedding(self, pretrain_params):
+        self.feature_embedding.weight.data.copy_(
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu())
+            )
+        )
+
+    def forward(self, x):
+        """
+            :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+            :return: pctrs
+        """
+        embedding_x = self.feature_embedding(x)
+        sum_embedding_x = torch.sum(embedding_x, dim=1)
+
+        outer_product = torch.mul(sum_embedding_x, sum_embedding_x.t())
+        cross_term = torch.sum(outer_product, dim=1) # 外积之和
+
+        cat_x = torch.cat([embedding_x.view(-1, self.field_nums * self.latent_dims), cross_term], dim=1)
+        out = self.mlp(cat_x)
+
+        return torch.sigmoid(out)
+
+class DeepFM(nn.Module):
+    def __init__(self,
+                 feature_nums,
+                 field_nums,
+                 latent_dims,
+                 output_dim=1):
+        super(DeepFM, self).__init__()
+        self.feature_nums = feature_nums
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
+
+        self.linear = nn.Embedding(self.feature_nums, output_dim)
+        nn.init.xavier_normal_(self.linear.weight.data)
+        self.bias = nn.Parameter(torch.zeros((output_dim,)))
+
+        # FM embedding
+        self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
+        nn.init.xavier_normal_(self.feature_embedding_fm.weight.data)
+
+        # MLP
+        self.mlp = mlp(feature_nums, latent_dims)
+
+    def to_fm(self, x):
+        """
+            :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+            :return: FM's output
+        """
+        linear_x = x
+
+        second_x = self.feature_embedding(x)
+
+        square_of_sum = torch.sum(second_x, dim=1) ** 2
+        sum_of_square = torch.sum(second_x ** 2, dim=1)
+
+        ix = torch.sum(square_of_sum - sum_of_square, dim=1,
+                       keepdim=True)  # 若keepdim值为True,则在输出张量中,除了被操作的dim维度值降为1,其它维度与输入张量input相同。
+
+        out = self.bias + torch.sum(self.linear(linear_x), dim=1) + ix * 0.5
+
+        return out
+
+    def forward(self, x):
+        """
+            :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+            :return: pctrs
+        """
+        embedding_x = self.feature_embedding(x)
+
+        out = self.to_fm(x) + self.mlp(embedding_x.view(-1, self.field_nums * self.latent_dims))
+
+        return torch.sigmoid(out)
+
+class FNN(nn.Module):
+    def __init__(self,
+                 feature_nums,
+                 field_nums,
+                 latent_dims):
+        super(FNN, self).__init__()
+        self.feature_nums = feature_nums
+        self.field_nums = field_nums
+        self.latent_dims = latent_dims
+
+        self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
+
+        self.mlp = mlp(feature_nums, latent_dims)
+
+    def load_embedding(self, pretrain_params):
+        self.feature_embedding.weight.data.copy_(
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu())
+            )
+        )
+
+    def forward(self, x):
+        """
+            :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
+            :return: pctrs
+        """
+        embedding_x = self.feature_embedding(x)
+        out = self.mlp(embedding_x.view(-1, self.field_nums * self.latent_dims))
+
+        return torch.sigmoid(out)
+
+
 
 
 

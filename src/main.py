@@ -224,31 +224,68 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
     return y_preds, prob_weights.to(device), rewards
 
 
+# def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
+#     total_loss = 0
+#     log_intervals = 0
+#     total_rewards = 0
+#     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
+#         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+#         actions = pg_model.choose_action(features)
+#         # ou_noise = np.hstack((ou_noise_obj()[:len(features)].reshape(-1, 1) for _ in range(3)))
+#
+#         prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features, actions.float()).cpu(), exploration_rate))
+#         # prob_weights = ddpg_for_pg_model.choose_action(features) + ou_noise
+#
+#         y_preds, prob_weights_new, rewards = \
+#             generate_preds(model_dict, features, actions, torch.FloatTensor(prob_weights).to(device), labels, device, mode='train')
+#
+#         # rewards = reward_functions(y_preds, features, model_dict, labels, device)
+#
+#         pg_model.store_transition(features, actions, rewards)
+#
+#         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
+#
+#         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
+#
+#         b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
+#
+#         td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_, b_pg_a)
+#         a_loss = ddpg_for_pg_model.learn_a(b_s, b_pg_a)
+#         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Actor, ddpg_for_pg_model.Actor_)
+#         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Critic, ddpg_for_pg_model.Critic_)
+#
+#         total_loss += td_error # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+#         log_intervals += 1
+#
+#         total_rewards += torch.sum(rewards, dim=0)
+#
+#         torch.cuda.empty_cache()# 清除缓存
+#
+#         if log_intervals % 81 == 0:
+#             pg_model.learn()
+#
+#     return total_loss / log_intervals, total_rewards / log_intervals
+
 def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
     total_loss = 0
     log_intervals = 0
     total_rewards = 0
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-        actions = pg_model.choose_action(features)
-        # ou_noise = np.hstack((ou_noise_obj()[:len(features)].reshape(-1, 1) for _ in range(3)))
+        actions = pg_model.choose_action(features, exploration_rate)
 
         prob_weights = np.abs(np.random.normal(ddpg_for_pg_model.choose_action(features, actions.float()).cpu(), exploration_rate))
-        # prob_weights = ddpg_for_pg_model.choose_action(features) + ou_noise
 
         y_preds, prob_weights_new, rewards = \
             generate_preds(model_dict, features, actions, torch.FloatTensor(prob_weights).to(device), labels, device, mode='train')
 
-        # rewards = reward_functions(y_preds, features, model_dict, labels, device)
-
-        pg_model.store_transition(features, actions, rewards)
-
+        pg_model.store_transition(torch.cat([features, actions, rewards], dim=1))
         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
-
         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
 
-        b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
+        pg_model.learn()
 
+        b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
         td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_, b_pg_a)
         a_loss = ddpg_for_pg_model.learn_a(b_s, b_pg_a)
         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Actor, ddpg_for_pg_model.Actor_)
@@ -260,9 +297,6 @@ def train(pg_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, ex
         total_rewards += torch.sum(rewards, dim=0)
 
         torch.cuda.empty_cache()# 清除缓存
-
-        if log_intervals % 81 == 0:
-            pg_model.learn()
 
     return total_loss / log_intervals, total_rewards / log_intervals
 
