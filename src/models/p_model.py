@@ -121,10 +121,10 @@ class WideAndDeep(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = 1024
+        neuron_nums = 512
         for i in range(4):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_nums
@@ -161,12 +161,13 @@ class InnerPNN(nn.Module):
 
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        deep_input_dims = self.field_nums * (self.field_nums - 1) // 2
+        deep_input_dims = self.field_nums * self.latent_dims + self.field_nums * (self.field_nums - 1) // 2
         layers = list()
 
+        neuron_nums = 512
         for i in range(4):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_nums
@@ -187,18 +188,19 @@ class InnerPNN(nn.Module):
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        embedding_x = self.feature_embedding(x)
+        embedding_x = self.feature_embedding(x).detach()
 
-        hadamard_vetors = torch.FloatTensor().cuda()
+        inner_product_vectors = torch.FloatTensor().cuda()
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
-                hadamard_product = torch.mul(embedding_x[:, i], embedding_x[:, j])
-                hadamard_vetors = torch.cat([hadamard_vetors, hadamard_product], dim=1)
+                inner_product = torch.sum(torch.mul(embedding_x[:, i], embedding_x[:, j]), dim=1).view(-1, 1)
+                inner_product_vectors = torch.cat([inner_product_vectors, inner_product], dim=1)
 
         # 內积之和
-        cross_term = torch.sum(hadamard_vetors, dim=1)
+        cross_term = inner_product_vectors
 
         cat_x = torch.cat([embedding_x.view(-1, self.field_nums * self.latent_dims), cross_term], dim=1)
+
         out = self.mlp(cat_x)
 
         return torch.sigmoid(out)
@@ -220,12 +222,13 @@ class OuterPNN(nn.Module):
 
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
-        deep_input_dims = self.field_nums * (self.field_nums - 1) // 2
+        deep_input_dims = self.latent_dims + self.field_nums * self.latent_dims
         layers = list()
 
+        neuron_nums = 512
         for i in range(4):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_nums
@@ -233,6 +236,10 @@ class OuterPNN(nn.Module):
 
         layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
+
+        # kernel指的对外积的转换
+        self.kernel = nn.Parameter(torch.ones((self.latent_dims, self.latent_dims)))
+        nn.init.xavier_normal_(self.kernel.data)
 
     def load_embedding(self, pretrain_params):
         self.feature_embedding.weight.data.copy_(
@@ -246,13 +253,14 @@ class OuterPNN(nn.Module):
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        embedding_x = self.feature_embedding(x)
-        sum_embedding_x = torch.sum(embedding_x, dim=1)
+        embedding_x = self.feature_embedding(x).detach()
 
-        outer_product = torch.mul(sum_embedding_x, sum_embedding_x.t())
-        cross_term = torch.sum(outer_product, dim=1) # 外积之和
+        sum_embedding_x = torch.sum(embedding_x, dim=1).unsqueeze(1)
+        outer_product = torch.mul(torch.mul(sum_embedding_x, self.kernel), sum_embedding_x)
 
-        cat_x = torch.cat([embedding_x.view(-1, self.field_nums * self.latent_dims), cross_term], dim=1)
+        cross_item = torch.sum(outer_product, dim=1) # 降维
+
+        cat_x = torch.cat([embedding_x.view(-1, self.field_nums * self.latent_dims), cross_item], dim=1)
         out = self.mlp(cat_x)
 
         return torch.sigmoid(out)
@@ -274,15 +282,16 @@ class DeepFM(nn.Module):
 
         # FM embedding
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
-        nn.init.xavier_normal_(self.feature_embedding_fm.weight.data)
+        nn.init.xavier_normal_(self.feature_embedding.weight.data)
 
         # MLP
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
+        neuron_nums = 512
         for i in range(4):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_nums
@@ -336,9 +345,10 @@ class FNN(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
+        neuron_nums = 512
         for i in range(4):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_nums
@@ -359,13 +369,7 @@ class FNN(nn.Module):
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        embedding_x = self.feature_embedding(x)
+        embedding_x = self.feature_embedding(x).detach()
         out = self.mlp(embedding_x.view(-1, self.field_nums * self.latent_dims))
 
         return torch.sigmoid(out)
-
-
-
-
-
-

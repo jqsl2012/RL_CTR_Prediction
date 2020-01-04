@@ -35,6 +35,10 @@ def get_model(model_name, feature_nums, field_nums, latent_dims):
         return Model.DeepFM(feature_nums, field_nums, latent_dims)
     elif model_name == 'FNN':
         return Model.FNN(feature_nums, field_nums, latent_dims)
+    elif model_name == 'IPNN':
+        return Model.InnerPNN(feature_nums, field_nums, latent_dims)
+    elif model_name == 'OPNN':
+        return Model.OuterPNN(feature_nums, field_nums, latent_dims)
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -84,7 +88,7 @@ def train(model, optimizer, data_loader, loss, device):
     model.train()  # 转换为训练模式
     total_loss = 0
     log_intervals = 0
-    for i, (features, labels) in enumerate(data_loader):
+    for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0) ):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
         y = model(features)
         train_loss = loss(y, labels.float())
@@ -152,7 +156,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
 
     model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
 
-    if model_name == 'IPNN' or 'OPNN' or 'FNN':
+    if model_name == 'IPNN' or model_name == 'OPNN' or model_name == 'FNN':
         FM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FMbest.pth')
         model.load_embedding(FM_pretain_params)
 
@@ -222,15 +226,18 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     day_aucs_df = pd.DataFrame(data=day_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
+    for i in range(5):
+        os.remove(save_param_dir + campaign_id + model_name + str(i) + '.pth')
+
 
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
     if type == 'auc':
-        if len(valid_aucs) > 5:
+        if len(valid_aucs) >= 5:
             if valid_aucs[-1] < valid_aucs[-2] and valid_aucs[-2] < valid_aucs[-3] and valid_aucs[-3] < valid_aucs[
                 -4] and valid_aucs[-4] < valid_aucs[-5]:
                 return True
     else:
-        if len(valid_losses) > 5:
+        if len(valid_losses) >= 5:
             if valid_losses[-1] > valid_losses[-2] and valid_losses[-2] > valid_losses[-3] and valid_losses[-3] > \
                     valid_losses[-4] and valid_losses[-4] > valid_losses[-5]:
                 return True
@@ -245,7 +252,7 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3358, 3386, 3427, 3476')
-    parser.add_argument('--model_name', default='W&D', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='OPNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)

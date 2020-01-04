@@ -267,9 +267,9 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             actions = ddqn_model.choose_best_action(features)
-
             prob_weights = ddpg_for_pg_model.choose_action(features, actions.float())
 
+            print(len((actions == 1).nonzero()), len((actions == 2).nonzero()), len((actions == 3).nonzero()), len((actions == 4).nonzero()), len((actions == 5).nonzero()))
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -312,34 +312,41 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     valid_data_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretain_params)
+    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    # FFM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FFMbest.pth')
+    # FFM.load_state_dict(FFM_pretain_params)
 
     FM = p_model.FM(feature_nums, latent_dims)
     FM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FMbest.pth')
     FM.load_state_dict(FM_pretain_params)
 
-    LR = p_model.LR(feature_nums)
-    LR_pretain_params = torch.load('models/model_params/' + campaign_id + 'LRbest.pth')
-    LR.load_state_dict(LR_pretain_params)
-
     WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
     WandD_pretrain_params = torch.load('models/model_params/' + campaign_id + 'W&Dbest.pth')
     WandD.load_state_dict(WandD_pretrain_params)
 
-    # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device), 3: WandD.to(device)}
-    model_dict = {0: FM.to(device), 1: WandD.to(device), 2: FFM.to(device)}
+    DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
+    DeepFM_pretrain_params = torch.load('models/model_params/' + campaign_id + 'DeepFMbest.pth')
+    DeepFM.load_state_dict(DeepFM_pretrain_params)
 
-    # model_dict = {0: FM.to(device), 1: FFM.to(device)}
+    FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
+    FNN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'FNNbest.pth')
+    FNN.load_embedding(FM_pretain_params)
+    FNN.load_state_dict(FNN_pretrain_params)
+
+    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    IPNN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'IPNNbest.pth')
+    IPNN.load_embedding(FM_pretain_params)
+    IPNN.load_state_dict(IPNN_pretrain_params)
+
+    model_dict = {0: IPNN.to(device), 1: WandD.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: FM.to(device)}
 
     model_dict_len = len(model_dict)
 
     memory_size = round(len(train_data), -6)
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
-    # ddqn_model.load_embedding(FM_pretain_params)
-    # ddpg_for_pg_model.load_embedding(FM_pretain_params)
+    ddqn_model.load_embedding(FM_pretain_params)
+    ddpg_for_pg_model.load_embedding(FM_pretain_params)
 
     loss = nn.BCELoss()
 

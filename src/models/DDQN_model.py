@@ -15,7 +15,7 @@ def setup_seed(seed):
 # 设置随机数种子
 setup_seed(1)
 
-neuron_nums_1 = 100
+neuron_nums_1 = 1024
 neuron_nums_2 = 512
 neuron_nums_3 = 256
 neuron_nums_4 = 128
@@ -27,7 +27,6 @@ class Net(nn.Module):
         self.field_nums = field_nums
         self.feature_nums = feature_nums
         self.latent_dims = latent_dims
-        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims)
 
         input_dims = 0
         for i in range(self.field_nums):
@@ -37,21 +36,14 @@ class Net(nn.Module):
         self.input_dims = input_dims
 
         self.fc1 = nn.Linear(self.input_dims, neuron_nums_1)
-        self.fc1.weight.data.normal_(0, 0.1)  # 全连接隐层 1 的参数初始化
         self.fc2 = nn.Linear(neuron_nums_1, neuron_nums_2)
-        self.fc2.weight.data.normal_(0, 0.1)  # 全连接隐层 2 的参数初始化
         self.fc3 = nn.Linear(neuron_nums_2, neuron_nums_3)
-        self.fc3.weight.data.normal_(0, 0.1)
         self.fc4 = nn.Linear(neuron_nums_3, neuron_nums_4)
-        self.fc4.weight.data.normal_(0, 0.1)
         self.out = nn.Linear(neuron_nums_4, action_nums)
-        self.out.weight.data.normal_(0, 0.1)
 
         self.dp = nn.Dropout(0.2)
 
     def forward(self, input):
-        input = self.embedding_layer.forward(input)
-
         x = F.relu(self.fc1(input))
         x = self.dp(x)
 
@@ -78,7 +70,7 @@ class DoubleDQN:
             action_nums=3,  # 动作的数量
             learning_rate=1e-3,  # 学习率
             reward_decay=1,  # 奖励折扣因子,偶发过程为1
-            replace_target_iter=300,  # 每300步替换一次target_net的参数
+            replace_target_iter=30,  # 每30次训练则替换一次target_net的参数
             memory_size=500,  # 经验池的大小
             batch_size=32,  # 每次更新时从memory里面取多少数据出来，mini-batch
             device='cuda:0',
@@ -106,6 +98,8 @@ class DoubleDQN:
         # 将经验池<状态-动作-奖励-下一状态>中的转换组初始化为0
         self.memory = torch.zeros(size=[self.memory_size, self.field_nums + 2]).to(self.device)
 
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+
         # 创建target_net（目标神经网络），eval_net（训练神经网络）
         self.eval_net, self.target_net = Net(self.field_nums, self.feature_nums, self.latent_dims, self.action_nums).to(self.device), Net(
             self.field_nums, self.feature_nums, self.latent_dims, self.action_nums).to(self.device)
@@ -115,6 +109,13 @@ class DoubleDQN:
 
         # 损失函数为，均方损失函数
         self.loss_func = nn.MSELoss()
+
+    def load_embedding(self, pretrain_params):
+        self.embedding_layer.feature_embedding.weight.data.copy_(
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu())
+            )
+        )
 
     # 经验池存储，s-state, a-action, r-reward
     def store_transition(self, transitions):
@@ -138,28 +139,26 @@ class DoubleDQN:
     def choose_action(self, states, exploration_rate):
         torch.cuda.empty_cache()
 
-        actions = torch.LongTensor().to(self.device)
+        states = self.embedding_layer.forward(states)
 
         action_values = self.eval_net.forward(states)
-        for action_value in action_values:
-            if np.random.uniform() > exploration_rate:
-                # 让 eval_net 神经网络生成所有 action 的值, 并选择值最大的 action
-                action = torch.unsqueeze(torch.argsort(-action_value)[0] + 1, 0)
-            else:
-                action = torch.randint(low=1, high=self.action_nums+1, size=[1]).to(self.device)
 
-            actions = torch.cat([actions, action])
+        random_seeds = torch.rand(len(states), 1)
+        max_action = torch.argsort(-action_values)[:, 0] + 1
+        random_action = torch.randint(low=1, high=self.action_nums+1, size=[len(states), 1])
 
-        # 用矩阵来初始化
+        actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1).cpu(), random_action)
 
-        return actions.view(-1, 1)
+        # 用矩阵来初始
+        return actions.to(self.device)
 
     # 选择最优动作
     def choose_best_action(self, states):
+        states = self.embedding_layer.forward(states)
+
         action_values = self.eval_net.forward(states)
 
-        actions = torch.argsort(-action_values, dim=1)[:, 0].view(-1, 1)
-
+        actions = (torch.argsort(-action_values, dim=1) + 1)[:, 0].view(-1, 1)
         return actions
 
     # 定义DQN的学习过程
@@ -183,14 +182,15 @@ class DoubleDQN:
 
         batch_memory = self.memory[sample_index, :].long()
 
-
         # 获取到q_next（target_net产生）以及q_eval（eval_net产生）
         # 如store_transition函数中存储所示，state存储在[0, feature_nums-1]的位置（即前feature_numbets）
         # state_存储在[feature_nums+1，memory_size]（即后feature_nums的位置）
-        b_s = batch_memory[:, :self.field_nums]
+        # b_s = batch_memory[:, :self.field_nums]
+        b_s = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
         b_a = batch_memory[:, self.field_nums: self.field_nums + 1]
         b_r = batch_memory[:, self.field_nums + 1].view(-1, 1).float()
-        b_s_ = batch_memory[:, :self.field_nums]
+        # b_s_ = batch_memory[:, :self.field_nums]
+        b_s_ = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
 
         # q_eval w.r.t the action in experience
         q_eval = self.eval_net.forward(b_s).gather(1, b_a - 1)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代

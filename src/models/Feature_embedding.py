@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+import numpy as np
+
 # class Feature_Embedding(nn.Module):
 #     def __init__(self, feature_numbers, field_nums, latent_dims, campaign_id):
 #         super(Feature_Embedding, self).__init__()
@@ -33,6 +35,7 @@ class Feature_Embedding(nn.Module):
         self.latent_dims = latent_dims
 
         self.feature_embedding = nn.Embedding(feature_numbers, latent_dims)
+        nn.init.xavier_normal_(self.feature_embedding.weight.data)
 
     def forward(self, x):
         x_second_embedding = self.feature_embedding(x)

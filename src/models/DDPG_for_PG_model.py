@@ -30,35 +30,25 @@ neural_nums_c_4 = 128
 
 
 class Actor(nn.Module):
-    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims):
+    def __init__(self, input_dims, action_numbers):
         super(Actor, self).__init__()
         # self.bn_pg = nn.BatchNorm1d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
 
-        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
-
         self.fc1 = nn.Linear(input_dims, neural_nums_a_1)
-        self.fc1.weight.data.normal_(0, 0.1)
 
         self.fc_pg_a = nn.Linear(1, neural_nums_a_1_action)
-        self.fc_pg_a.weight.data.normal_(0, 0.1)
 
         self.fc2 = nn.Linear(neural_nums_a_1 + neural_nums_a_1_action, neural_nums_a_2)
-        self.fc2.weight.data.normal_(0, 0.1)
 
         self.fc3 = nn.Linear(neural_nums_a_2, neural_nums_a_3)
-        self.fc3.weight.data.normal_(0, 0.1)
 
         self.fc4 = nn.Linear(neural_nums_a_3, neural_nums_a_4)
-        self.fc4.weight.data.normal_(0, 0.1)
 
         self.out = nn.Linear(neural_nums_a_4, action_numbers)
-        self.out.weight.data.normal_(0, 0.1)
 
         self.dp = nn.Dropout(0.2)
 
     def forward(self, input, pg_a):
-        input = self.embedding_layer.forward(input)
-
         input_ddpg_pg = torch.cat([F.relu(self.fc1(input)), F.relu(self.fc_pg_a(pg_a))], dim=1)
 
         x = self.dp(input_ddpg_pg)
@@ -78,38 +68,27 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims):
+    def __init__(self, input_dims, action_numbers):
         super(Critic, self).__init__()
         # self.bn_pg = nn.BatchNorm1d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
 
-        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
-
         self.fc_s = nn.Linear(input_dims, neural_nums_c_1_state)
-        self.fc_s.weight.data.normal_(0, 0.1)
 
         self.fc_a = nn.Linear(action_numbers, neural_nums_c_1_action * action_numbers)
-        self.fc_a.weight.data.normal_(0, 0.1)
 
         self.fc_pg_a = nn.Linear(1, neural_nums_a_1_pg_action)
-        self.fc_pg_a.weight.data.normal_(0, 0.1)
 
         self.fc_q = nn.Linear(neural_nums_c_1_state + neural_nums_c_1_action * action_numbers + neural_nums_a_1_pg_action, neural_nums_c_2)
-        self.fc_q.weight.data.normal_(0, 0.1)
 
         self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
-        self.fc_.weight.data.normal_(0, 0.1)
 
         self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
-        self.fc_1.weight.data.normal_(0, 0.1)
 
         self.fc_out = nn.Linear(neural_nums_c_4, 1)
-        self.fc_out.weight.data.normal_(0, 0.1)
 
         self.dp = nn.Dropout(0.2)
 
     def forward(self, input, action, pg_a):
-        input = self.embedding_layer.forward(input)
-
         f_s = F.relu(self.fc_s(input))
         f_a = F.relu(self.fc_a(action))
         f_pg_a = F.relu(self.fc_pg_a(pg_a))
@@ -172,11 +151,13 @@ class DDPG():
         self.memory_action_reward = torch.zeros(size=[self.memory_size, self.action_nums + 1]).to(self.device)
         self.memory_pg_action = torch.zeros(size=[self.memory_size, 1]).to(self.device)
 
-        self.Actor = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
-        self.Critic = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
 
-        self.Actor_ = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
-        self.Critic_ = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+        self.Actor = Actor(self.input_dims, self.action_nums).to(self.device)
+        self.Critic = Critic(self.input_dims, self.action_nums).to(self.device)
+
+        self.Actor_ = Actor(self.input_dims, self.action_nums).to(self.device)
+        self.Critic_ = Critic(self.input_dims, self.action_nums).to(self.device)
 
         # 优化器
         self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
@@ -192,12 +173,12 @@ class DDPG():
     #             )
     #         )
 
-    # def load_embedding(self, pretrain_params):
-    #     self.embedding_layer.feature_embedding.weight.data.copy_(
-    #         torch.from_numpy(
-    #             np.array(pretrain_params['feature_embedding.weight'].cpu())
-    #         )
-    #     )
+    def load_embedding(self, pretrain_params):
+        self.embedding_layer.feature_embedding.weight.data.copy_(
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu())
+            )
+        )
 
     def store_transition(self, features, action_rewards, pg_actions):
         transition_lens = len(features)
@@ -225,7 +206,7 @@ class DDPG():
 
     def choose_action(self, state, pg_a):
 
-        # state = self.embedding_layer.forward(state)
+        state = self.embedding_layer.forward(state)
 
         self.Actor.eval()
         with torch.no_grad():
@@ -249,12 +230,12 @@ class DDPG():
         batch_memory_action_rewards = self.memory_action_reward[sample_index, :]
         batch_memory_pg_actions = self.memory_pg_action[sample_index, :]
 
-        # b_s = self.embedding_layer.forward(batch_memory_states)
-        b_s = batch_memory_states
+        b_s = self.embedding_layer.forward(batch_memory_states)
+        # b_s = batch_memory_states
         b_a = batch_memory_action_rewards[:, 0: self.action_nums]
         b_r = torch.unsqueeze(batch_memory_action_rewards[:, self.action_nums], 1)
-        # b_s_ = self.embedding_layer.forward(batch_memory_states)
-        b_s_ = batch_memory_states
+        b_s_ = self.embedding_layer.forward(batch_memory_states)
+        # b_s_ = batch_memory_states
 
         return b_s, b_a, b_r, b_s_, batch_memory_pg_actions
 
