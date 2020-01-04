@@ -29,7 +29,7 @@ import numpy as np
 
 #
 class Feature_Embedding(nn.Module):
-    def __init__(self, feature_numbers, field_nums, latent_dims):
+    def __init__(self, feature_numbers, field_nums, latent_dims, output_dim=1):
         super(Feature_Embedding, self).__init__()
         self.field_nums = field_nums
         self.latent_dims = latent_dims
@@ -37,14 +37,23 @@ class Feature_Embedding(nn.Module):
         self.feature_embedding = nn.Embedding(feature_numbers, latent_dims)
         nn.init.xavier_normal_(self.feature_embedding.weight.data)
 
-    def forward(self, x):
-        x_second_embedding = self.feature_embedding(x)
-        embedding_vectors = torch.FloatTensor().cuda()
+        self.linear = nn.Embedding(feature_numbers, output_dim)
+        nn.init.xavier_normal_(self.linear.weight.data)
+
+        self.row, self.col = list(), list()
         for i in range(self.field_nums - 1):
             for j in range(i + 1, self.field_nums):
-                hadamard_product = x_second_embedding[:, i] * x_second_embedding[:, j]
-                embedding_vectors = torch.cat([embedding_vectors, hadamard_product], dim=1)
+                self.row.append(i), self.col.append(j)
 
-        embedding_vectors = torch.cat([embedding_vectors, x_second_embedding.view(-1, self.field_nums * self.latent_dims)], dim=1)
+    def forward(self, x):
+        x_first_embedding = self.linear(x)
 
-        return embedding_vectors.detach()
+        x_second_embedding = self.feature_embedding(x)
+
+        hadamard_product = torch.mul(x_second_embedding[:, self.row], x_second_embedding[:, self.col])
+        inner_product = torch.sum(hadamard_product, dim=2)
+
+        # hadamard_product = hadamard_product.view(-1, self.field_nums * self.latent_dims)
+        embedding_vectors = torch.cat([inner_product, x_first_embedding.view(-1, self.field_nums)], dim=1)
+
+        return embedding_vectors

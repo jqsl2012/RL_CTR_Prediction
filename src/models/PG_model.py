@@ -29,7 +29,7 @@ class Net(nn.Module):
         self.latent_dims = latent_dims
         self.campaign_id = campaign_id
 
-        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id)
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims)
 
         input_dims = 0
         for i in range(self.field_nums):
@@ -38,35 +38,22 @@ class Net(nn.Module):
         input_dims += self.field_nums * self.latent_dims
         self.input_dims = input_dims
 
-        self.fc1 = nn.Linear(self.input_dims, neuron_nums_1)
-        self.fc1.weight.data.normal_(0, 0.1)  # 全连接隐层 1 的参数初始化
-        self.fc2 = nn.Linear(neuron_nums_1, neuron_nums_2)
-        self.fc2.weight.data.normal_(0, 0.1)  # 全连接隐层 2 的参数初始化
-        self.fc3 = nn.Linear(neuron_nums_2, neuron_nums_3)
-        self.fc3.weight.data.normal_(0, 0.1)
-        self.fc4 = nn.Linear(neuron_nums_3, neuron_nums_4)
-        self.fc4.weight.data.normal_(0, 0.1)
-        self.out = nn.Linear(neuron_nums_4, action_numbers)
-        self.out.weight.data.normal_(0, 0.1)
+        layers = list()
+        neuron_nums = 1024
+        for i in range(4):
+            layers.append(nn.Linear(input_dims, neuron_nums))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.2))
+            input_dims = neuron_nums
+            neuron_nums = int(neuron_nums / 2)
+        layers.append(nn.Linear(input_dims, action_numbers))
 
-        self.dp = nn.Dropout(0.2)
+        self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
         input = self.embedding_layer.forward(input)
 
-        x = F.relu(self.fc1(input))
-        x = self.dp(x)
-
-        x_ = F.relu(self.fc2(x))
-        x_ = self.dp(x_)
-
-        x_1 = F.relu(self.fc3(x_))
-        x_1 = self.dp(x_1)
-
-        x_2 = F.relu(self.fc4(x_1))
-        x_2 = self.dp(x_2)
-
-        actions_value = torch.softmax(self.out(x_2), dim=1)
+        actions_value = torch.softmax(self.mlp(input), dim=1)
 
         return actions_value
 
@@ -107,12 +94,12 @@ class PolicyGradient:
     #             )
     #         )
 
-    # def load_embedding(self, pretrain_params):
-    #     self.embedding_layer.feature_embedding.weight.data.copy_(
-    #         torch.from_numpy(
-    #             np.array(pretrain_params['feature_embedding.weight'].cpu())
-    #         )
-    #     )
+    def load_embedding(self, pretrain_params):
+        self.embedding_layer.feature_embedding.weight.data.copy_(
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu())
+            )
+        )
 
     def loss_func(self, all_act_prob, acts, vt):
         neg_log_prob = torch.sum(-torch.log(all_act_prob.gather(1, acts - 1)))
@@ -120,34 +107,26 @@ class PolicyGradient:
         return loss
 
     # 依据概率来选择动作，本身具有随机性
-    def choose_action(self, state):
-        # state = self.embedding_layer(state)
+    def choose_action(self, states):
+        # states = self.embedding_layer.forward(states)
 
-        with torch.no_grad():
-            prob_weights = self.policy_net.forward(state).detach().cpu().numpy()
-            actions = []
-            for prob_weight in prob_weights:
-                try:
-                    if np.random.uniform() > np.max(prob_weight):
-                        random_a = np.argmax(prob_weight) + 1
-                    else:
-                        random_a = np.random.choice(range(1, prob_weight.shape[0] + 1))
-                    actions.append(random_a)
-                except:
-                    print(prob_weight)
+        prob_weights = self.policy_net.forward(states).cpu()
+        random_seeds = torch.rand(len(states), 1)
+        max_action = torch.argsort(-prob_weights)[:, 0] + 1
+        random_action = torch.randint(low=1, high=self.action_nums + 1, size=[len(states), 1])
 
-        return torch.LongTensor(actions).view(-1, 1).to(self.device)
+        actions = random_action
+
+        return actions.to(self.device)
 
     def choose_best_action(self, state):
-        # state = self.embedding_layer(state)
+        # state = self.embedding_layer.forward(state)
 
-        with torch.no_grad():
-            prob_weights = self.policy_net.forward(state).detach().cpu().numpy()
-            actions = []
-            for prob_weight in prob_weights:
-                actions.append(np.argmax(prob_weight) + 1)
+        prob_weights = self.policy_net.forward(state)
 
-        return torch.LongTensor(actions).view(-1, 1).to(self.device)
+        actions = torch.max(prob_weights, 1)[1].view(-1, 1) + 1
+
+        return actions
 
     # 储存一回合的s,a,r；因为每回合训练
     def store_transition(self, s, a, r):

@@ -79,41 +79,12 @@ def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
 
     return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
 
-#
-# def reward_functions(y_preds, features, model_dict, labels, device):
-#     model_dict_preds = torch.FloatTensor().to(device)
-#     for i in range(len(model_dict)):
-#         model_dict_preds = torch.cat([model_dict_preds, model_dict[i](features)], dim=1)
-#     average_preds = model_dict_preds.mean(dim=1).view(-1, 1)
-#
-#     reward = 1
-#     punishment = -1
-#
-#     with_clk_indexs = (labels == 1).nonzero()[:, 0]
-#     without_clk_indexs = (labels == 0).nonzero()[:, 0]
-#
-#     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
-#     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
-#
-#     reward_without_clk = torch.where(y_preds[without_clk_indexs] >= average_preds[without_clk_indexs],
-#                                      tensor_for_noclk * punishment,
-#                                      tensor_for_noclk * reward).cpu().numpy()
-#     reward_with_clk = torch.where(y_preds[with_clk_indexs] >= average_preds[with_clk_indexs],
-#                                   tensor_for_clk * reward,
-#                                   tensor_for_clk * punishment).cpu().numpy()
-#
-#     for i, clk_index in enumerate(with_clk_indexs.cpu().numpy()):
-#         reward_without_clk = np.insert(reward_without_clk, clk_index, reward_with_clk[i]) # 向指定位置插入具有点击的奖励值
-#
-#     return_reward = torch.FloatTensor(reward_without_clk).view(-1, 1)
-#
-#     return return_reward.to(device)
-
 
 def generate_preds(model_dict, features, actions, prob_weights, labels, device, mode):
     y_preds = torch.ones(size=[len(features), 1]).to(device)
     rewards = torch.ones(size=[len(features), 1]).to(device)
 
+    origin_prob_weights = prob_weights
     if mode == 'train':
         prob_weights = torch.softmax(prob_weights, dim=1)
 
@@ -135,23 +106,30 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
 
         if i == 0:
             current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+            # current_origin_prob_weights, current_origin_sortindex_prob_weights = torch.sort(
+            #     origin_prob_weights[with_action_indexs], dim=1)
+            # current_origin_prob_weights = current_origin_prob_weights.to(device)
             for k in range(pretrain_model_len):
                 current_pretrain_y_preds = pretrain_y_preds[k][with_action_indexs]
                 choose_model_indexs = (current_choose_models == k).nonzero()[:, 0]
                 current_y_preds[choose_model_indexs, :] = current_pretrain_y_preds[choose_model_indexs]
+                # current_y_preds[choose_model_indexs, :] = torch.mul(
+                #     current_origin_prob_weights[choose_model_indexs][:, pretrain_model_len - 1].view(-1, 1),
+                #     current_pretrain_y_preds[choose_model_indexs])
+
             y_preds[with_action_indexs, :] = current_y_preds
 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= pretrain_y_preds[pretrain_model_len - 1][with_action_indexs][
                     current_with_clk_indexs],
-                current_basic_rewards[current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs] * 1,
                 current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= pretrain_y_preds[pretrain_model_len - 1][with_action_indexs][
                     current_without_clk_indexs],
-                current_basic_rewards[current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs] * 1,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
 
@@ -171,14 +149,14 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs] * 1,
                 current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                     current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs] * 1,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
 
@@ -206,14 +184,14 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_row_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs],
+                current_basic_rewards[current_with_clk_indexs] * 1,
                 current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[
                     current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs],
+                current_basic_rewards[current_without_clk_indexs] * 1,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
 
@@ -338,15 +316,15 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     IPNN.load_embedding(FM_pretain_params)
     IPNN.load_state_dict(IPNN_pretrain_params)
 
-    model_dict = {0: IPNN.to(device), 1: WandD.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: FM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FM.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: IPNN.to(device)}
 
     model_dict_len = len(model_dict)
 
     memory_size = round(len(train_data), -6)
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
-    ddqn_model.load_embedding(FM_pretain_params)
-    ddpg_for_pg_model.load_embedding(FM_pretain_params)
+    # ddqn_model.load_embedding(FM_pretain_params)
+    # ddpg_for_pg_model.load_embedding(FM_pretain_params)
 
     loss = nn.BCELoss()
 
