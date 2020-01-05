@@ -70,7 +70,7 @@ class DoubleDQN:
             batch_size=32,  # 每次更新时从memory里面取多少数据出来，mini-batch
             device='cuda:0',
     ):
-        self.action_nums = action_nums  # 动作的具体数值？[0,0.01,...,budget]
+        self.action_nums = action_nums - 1  # 动作的具体数值？[0,0.01,...,budget]
         self.feature_nums = feature_nums
         self.field_nums = field_nums
         self.latent_dims = latent_dims
@@ -136,23 +136,27 @@ class DoubleDQN:
 
         action_values = self.eval_net.forward(states)
 
-        random_seeds = torch.rand(len(states), 1)
-        max_action = torch.argsort(-action_values)[:, 0] + 1
-        random_action = torch.randint(low=1, high=self.action_nums+1, size=[len(states), 1])
+        random_seeds = torch.rand(len(states), 1).to(self.device)
+        max_action = torch.argsort(-action_values)[:, 0] + 2
+        random_action = torch.randint(low=2, high=self.action_nums + 2, size=[len(states), 1]).to(self.device)
 
-        actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1).cpu(), random_action)
+        # soft_action, soft_action_index = torch.sort(torch.softmax(action_values, dim=1), dim=1)
+
+        exploration_rate = max(exploration_rate, 0.1)
+        actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1), random_action)
 
         # 用矩阵来初始
-        return actions.to(self.device)
+        return actions
 
     # 选择最优动作
     def choose_best_action(self, states):
         # states = self.embedding_layer.forward(states)
 
         action_values = self.eval_net.forward(states)
+        action = torch.argsort(-action_values)[:, 0] + 2
 
-        actions = (torch.argsort(-action_values, dim=1) + 1)[:, 0].view(-1, 1)
-        return actions
+        return action.view(-1, 1)
+        # return actions.to(self.device)
 
     # 定义DQN的学习过程
     def learn(self):
@@ -186,7 +190,7 @@ class DoubleDQN:
         # b_s_ = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
 
         # q_eval w.r.t the action in experience
-        q_eval = self.eval_net.forward(b_s).gather(1, b_a - 1)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
+        q_eval = self.eval_net.forward(b_s).gather(1, b_a - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
         q_next = self.target_net.forward(b_s_).detach()  # detach from graph, don't backpropagate，因为target网络不需要训练
         # 下一状态s的eval_net值
         q_eval_next = self.eval_net.forward(b_s_)

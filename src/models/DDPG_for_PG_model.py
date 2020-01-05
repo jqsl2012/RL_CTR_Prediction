@@ -209,16 +209,34 @@ class DDPG():
 
         self.memory_counter += transition_lens
 
-    def choose_action(self, state, pg_a):
+    def choose_action(self, state, pg_a, exploration_rate):
 
         # state = self.embedding_layer.forward(state)
 
         self.Actor.eval()
         with torch.no_grad():
             action = self.Actor.forward(state, pg_a)
+            random_seeds = torch.rand(len(state), 1).to(self.device)
+
+            # sort_action_value, sort_action_value_index = torch.sort(action, dim=1)
+            # max_action_value = sort_action_value[:, self.action_nums - 1].view(-1, 1)
+            # explorations = torch.cat([max_action_value for _ in range(self.action_nums)], dim=1)
+            random_action = torch.softmax(torch.abs(torch.normal(action, exploration_rate)), dim=1)
+
+            exploration_rate = max(exploration_rate, 0.1)
+            actions = torch.where(random_seeds >= exploration_rate, action,
+                                  random_action)
         self.Actor.train()
 
+        return actions
+
+    def choose_best_action(self, state, pg_a):
+        self.Actor.eval()
+        with torch.no_grad():
+            action = self.Actor.forward(state, pg_a)
+
         return action
+        # return actions.to(self.device)
 
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):

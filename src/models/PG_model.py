@@ -115,7 +115,8 @@ class PolicyGradient:
         max_action = torch.argsort(-prob_weights)[:, 0] + 1
         random_action = torch.randint(low=1, high=self.action_nums + 1, size=[len(states), 1])
 
-        actions = random_action
+        actions = torch.where(random_seeds >= torch.max(prob_weights, 1)[0].view(-1, 1), max_action.view(-1, 1), random_action)
+        # actions = random_action
 
         return actions.to(self.device)
 
