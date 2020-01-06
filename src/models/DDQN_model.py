@@ -103,13 +103,6 @@ class DoubleDQN:
         # 损失函数为，均方损失函数
         self.loss_func = nn.MSELoss()
 
-    def load_embedding(self, pretrain_params):
-        self.embedding_layer.feature_embedding.weight.data.copy_(
-            torch.from_numpy(
-                np.array(pretrain_params['feature_embedding.weight'].cpu())
-            )
-        )
-
     # 经验池存储，s-state, a-action, r-reward
     def store_transition(self, transitions):
         transition_lens = len(transitions)
@@ -133,14 +126,14 @@ class DoubleDQN:
         torch.cuda.empty_cache()
 
         # states = self.embedding_layer.forward(states)
-
-        action_values = self.eval_net.forward(states)
+        self.eval_net.train()
+        with torch.no_grad():
+            action_values = self.eval_net.forward(states)
+        # self.eval_net.train()
 
         random_seeds = torch.rand(len(states), 1).to(self.device)
         max_action = torch.argsort(-action_values)[:, 0] + 2
         random_action = torch.randint(low=2, high=self.action_nums + 2, size=[len(states), 1]).to(self.device)
-
-        # soft_action, soft_action_index = torch.sort(torch.softmax(action_values, dim=1), dim=1)
 
         exploration_rate = max(exploration_rate, 0.1)
         actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1), random_action)
@@ -151,12 +144,13 @@ class DoubleDQN:
     # 选择最优动作
     def choose_best_action(self, states):
         # states = self.embedding_layer.forward(states)
+        self.eval_net.eval()
 
-        action_values = self.eval_net.forward(states)
-        action = torch.argsort(-action_values)[:, 0] + 2
+        with torch.no_grad():
+            action_values = self.eval_net.forward(states)
+            action = torch.argsort(-action_values)[:, 0] + 2
 
         return action.view(-1, 1)
-        # return actions.to(self.device)
 
     # 定义DQN的学习过程
     def learn(self):

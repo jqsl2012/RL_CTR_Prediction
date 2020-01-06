@@ -17,13 +17,13 @@ def setup_seed(seed):
 setup_seed(1)
 
 neural_nums_a_1 = 512
-neural_nums_a_1_action = 64
+neural_nums_a_1_action = 32
 neural_nums_a_2 = 256
 neural_nums_a_3 = 128
 neural_nums_a_4 = 64
 neural_nums_c_1_state = 512
-neural_nums_c_1_action = 64
-neural_nums_a_1_pg_action = 64
+neural_nums_c_1_action = 32
+neural_nums_a_1_pg_action = 32
 neural_nums_c_2 = 256
 neural_nums_c_3 = 128
 neural_nums_c_4 = 64
@@ -170,21 +170,6 @@ class DDPG():
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-    # def load_embedding(self, pretrain_params):
-    #     for i, embedding in enumerate(self.embedding_layer.field_feature_embeddings):
-    #         embedding.weight.data.copy_(
-    #             torch.from_numpy(
-    #                 np.array(pretrain_params['field_feature_embeddings.' + str(i) + '.weight'].cpu())
-    #             )
-    #         )
-
-    # def load_embedding(self, pretrain_params):
-    #     self.embedding_layer.feature_embedding.weight.data.copy_(
-    #         torch.from_numpy(
-    #             np.array(pretrain_params['feature_embedding.weight'].cpu())
-    #         )
-    #     )
-
     def store_transition(self, features, action_rewards, pg_actions):
         transition_lens = len(features)
 
@@ -213,20 +198,17 @@ class DDPG():
 
         # state = self.embedding_layer.forward(state)
 
-        self.Actor.eval()
+        self.Actor.train()
         with torch.no_grad():
             action = self.Actor.forward(state, pg_a)
-            random_seeds = torch.rand(len(state), 1).to(self.device)
+        # self.Actor.train()
+        random_seeds = torch.rand(len(state), 1).to(self.device)
 
-            # sort_action_value, sort_action_value_index = torch.sort(action, dim=1)
-            # max_action_value = sort_action_value[:, self.action_nums - 1].view(-1, 1)
-            # explorations = torch.cat([max_action_value for _ in range(self.action_nums)], dim=1)
-            random_action = torch.softmax(torch.abs(torch.normal(action, exploration_rate)), dim=1)
+        random_action = torch.softmax(torch.abs(torch.normal(action, exploration_rate)), dim=1)
 
-            exploration_rate = max(exploration_rate, 0.1)
-            actions = torch.where(random_seeds >= exploration_rate, action,
-                                  random_action)
-        self.Actor.train()
+        exploration_rate = max(exploration_rate, 0.1)
+        actions = torch.where(random_seeds >= exploration_rate, action,
+                              random_action)
 
         return actions
 
@@ -236,7 +218,6 @@ class DDPG():
             action = self.Actor.forward(state, pg_a)
 
         return action
-        # return actions.to(self.device)
 
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):
