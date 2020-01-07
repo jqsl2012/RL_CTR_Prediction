@@ -267,9 +267,10 @@ class DDPG():
         return b_s, b_a, b_r, b_s_
 
     def learn_c(self, b_s, b_a, b_r, b_s_):
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_))
+        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_)).detach()
         q = self.Critic.forward(b_s, b_a)
-        td_error = F.smooth_l1_loss(q, q_target.detach())
+        td_error = self.loss_func(q, q_target).mean()
+
         self.optimizer_c.zero_grad()
         td_error.backward()
         self.optimizer_c.step()

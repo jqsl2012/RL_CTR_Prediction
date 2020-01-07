@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
-from collections import defaultdict
 
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -16,103 +15,69 @@ def setup_seed(seed):
 # 设置随机数种子
 setup_seed(1)
 
-neural_nums_a_1 = 512
-neural_nums_a_1_action = 32
-neural_nums_a_2 = 256
-neural_nums_a_3 = 128
-neural_nums_a_4 = 64
-neural_nums_c_1_state = 512
-neural_nums_c_1_action = 32
-neural_nums_a_1_pg_action = 32
-neural_nums_c_2 = 256
-neural_nums_c_3 = 128
-neural_nums_c_4 = 64
-
 
 class Actor(nn.Module):
-    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims):
+    def __init__(self, input_dims, action_nums):
         super(Actor, self).__init__()
-        # self.bn_pg = nn.BatchNorm1d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+        self.input_dims = input_dims
 
-        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
+        self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
 
-        self.fc1 = nn.Linear(input_dims, neural_nums_a_1)
+        deep_input_dims = self.input_dims + 1
+        layers = list()
+        neuron_nums = 512
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, neuron_nums))
+            layers.append(nn.BatchNorm1d(neuron_nums))
+            layers.append(nn.ReLU())
+            deep_input_dims = neuron_nums
+            neuron_nums = int(neuron_nums / 2)
+        layers.append(nn.Linear(deep_input_dims, action_nums))
 
-        self.fc_pg_a = nn.Linear(1, neural_nums_a_1_action)
+        self.mlp = nn.Sequential(*layers)
 
-        self.fc2 = nn.Linear(neural_nums_a_1 + neural_nums_a_1_action, neural_nums_a_2)
+    def forward(self, input, ddqn_a):
+        input = torch.cat([input, ddqn_a], dim=1)
+        input = self.bn_input(input)
 
-        self.fc3 = nn.Linear(neural_nums_a_2, neural_nums_a_3)
-
-        self.fc4 = nn.Linear(neural_nums_a_3, neural_nums_a_4)
-
-        self.out = nn.Linear(neural_nums_a_4, action_numbers)
-
-        self.dp = nn.Dropout(0.2)
-
-    def forward(self, input, pg_a):
-        input = self.embedding_layer.forward(input)
-
-        input_ddpg_pg = torch.cat([F.relu(self.fc1(input)), F.relu(self.fc_pg_a(pg_a))], dim=1)
-
-        x = self.dp(input_ddpg_pg)
-
-        x_ = F.relu(self.fc2(x))
-        x_ = self.dp(x_)
-
-        x_1 = F.relu(self.fc3(x_))
-        x_1 = self.dp(x_1)
-
-        x_2 = F.relu(self.fc4(x_1))
-        x_2 = self.dp(x_2)
-
-        out = torch.softmax(self.out(x_2), dim=1)
+        out = torch.softmax(self.mlp(input), dim=1)
 
         return out
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dims, action_numbers, feature_nums, field_nums, latent_dims):
+    def __init__(self, input_dims, action_nums):
         super(Critic, self).__init__()
-        # self.bn_pg = nn.BatchNorm1d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
-        self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        self.fc_s = nn.Linear(input_dims, neural_nums_c_1_state)
+        neuron_nums_1 = 512
+        self.fc_s = nn.Linear(input_dims + 1, neuron_nums_1)
 
-        self.fc_a = nn.Linear(action_numbers, neural_nums_c_1_action * action_numbers)
+        self.bn_input = nn.BatchNorm1d(input_dims + 1)
 
-        self.fc_pg_a = nn.Linear(1, neural_nums_a_1_pg_action)
+        self.bn_f_s = nn.BatchNorm1d(neuron_nums_1)
 
-        self.fc_q = nn.Linear(neural_nums_c_1_state + neural_nums_c_1_action * action_numbers + neural_nums_a_1_pg_action, neural_nums_c_2)
+        deep_input_dims = neuron_nums_1 + action_nums
+        layers = list()
+        neuron_nums_2 = neuron_nums_1 // 2
+        for i in range(4):
+            layers.append(nn.Linear(deep_input_dims, neuron_nums_2))
+            layers.append(nn.BatchNorm1d(neuron_nums_2))
+            layers.append(nn.ReLU())
+            deep_input_dims = neuron_nums_2
+            neuron_nums_2 = int(neuron_nums_2 / 2)
+        layers.append(nn.Linear(deep_input_dims, action_nums))
 
-        self.fc_ = nn.Linear(neural_nums_c_2, neural_nums_c_3)
+        self.layer2_mlp = nn.Sequential(*layers)
 
-        self.fc_1 = nn.Linear(neural_nums_c_3, neural_nums_c_4)
-
-        self.fc_out = nn.Linear(neural_nums_c_4, 1)
-
-        self.dp = nn.Dropout(0.2)
-
-    def forward(self, input, action, pg_a):
-        input = self.embedding_layer.forward(input)
+    def forward(self, input, action, ddqn_a):
+        input = torch.cat([input, ddqn_a], dim=1)
+        input = self.bn_input(input)
 
         f_s = F.relu(self.fc_s(input))
-        f_a = F.relu(self.fc_a(action))
-        f_pg_a = F.relu(self.fc_pg_a(pg_a))
 
-        cat = torch.cat([f_s, f_a, f_pg_a], dim=1)
-        cat = self.dp(cat)
-
-        q_ = F.relu(self.fc_q(cat))
-        q_ = self.dp(q_)
-
-        q_1 = F.relu(self.fc_(q_))
-        q_1 = self.dp(q_1)
-
-        q_2 = F.relu(self.fc_1(q_1))
-        q_2 = self.dp(q_2)
-
-        q_out = self.fc_out(q_2)
+        cat = torch.cat([self.bn_f_s(f_s), action], dim=1)
+        
+        q_out = self.layer2_mlp(cat)
 
         return q_out
 
@@ -124,7 +89,7 @@ class DDPG():
             latent_dims=5,
             action_nums=2,
             campaign_id='1458',
-            lr_A=1e-4,
+            lr_A=1e-3,
             lr_C=1e-3,
             reward_decay=1,
             memory_size=4096000,
@@ -147,22 +112,20 @@ class DDPG():
 
         self.memory_counter = 0
 
-        input_dims = 0
-        for i in range(self.field_nums - 1):
-            for j in range(i + 1, self.field_nums):
-                input_dims += 1
-        input_dims += self.field_nums  # 15+75
-        self.input_dims = input_dims
+        self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
         self.memory_state = torch.zeros(size=[self.memory_size, self.field_nums]).to(self.device)
         self.memory_action_reward = torch.zeros(size=[self.memory_size, self.action_nums + 1]).to(self.device)
-        self.memory_pg_action = torch.zeros(size=[self.memory_size, 1]).to(self.device)
+        self.memory_ddqn_action = torch.zeros(size=[self.memory_size, 1]).to(self.device)
 
-        self.Actor = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
-        self.Critic = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
+        self.embedding_layer.load_embedding()
 
-        self.Actor_ = Actor(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
-        self.Critic_ = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
+        self.Actor = Actor(self.input_dims, self.action_nums).to(self.device)
+        self.Critic = Critic(self.input_dims, self.action_nums,).to(self.device)
+
+        self.Actor_ = Actor(self.input_dims, self.action_nums).to(self.device)
+        self.Critic_ = Critic(self.input_dims, self.action_nums).to(self.device)
 
         # 优化器
         self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
@@ -170,7 +133,7 @@ class DDPG():
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-    def store_transition(self, features, action_rewards, pg_actions):
+    def store_transition(self, features, action_rewards, ddqn_actions):
         transition_lens = len(features)
 
         # 由于已经定义了经验池的memory_size，如果超过此大小，旧的memory则被新的memory替换
@@ -180,28 +143,29 @@ class DDPG():
         if index_end > index_start:
             self.memory_state[index_start: index_end, :] = features  # 替换
             self.memory_action_reward[index_start: index_end, :] = action_rewards
-            self.memory_pg_action[index_start: index_end, :] = pg_actions
+            self.memory_ddqn_action[index_start: index_end, :] = ddqn_actions
         else:
             replace_len_1 = self.memory_size - index_start
             self.memory_state[index_start: self.memory_size, :] = features[0: replace_len_1]
             self.memory_action_reward[index_start: self.memory_size, :] = action_rewards[0: replace_len_1]
-            self.memory_pg_action[index_start: self.memory_size, :] = pg_actions[0: replace_len_1]
+            self.memory_ddqn_action[index_start: self.memory_size, :] = ddqn_actions[0: replace_len_1]
 
             replace_len_2 = transition_lens - replace_len_1
             self.memory_state[0: replace_len_2, :] = features[replace_len_1: transition_lens]
             self.memory_action_reward[0: replace_len_2, :] = action_rewards[replace_len_1: transition_lens]
-            self.memory_pg_action[0: replace_len_2, :] = pg_actions[replace_len_1: transition_lens]
+            self.memory_ddqn_action[0: replace_len_2, :] = ddqn_actions[replace_len_1: transition_lens]
 
         self.memory_counter += transition_lens
 
-    def choose_action(self, state, pg_a, exploration_rate):
+    def choose_action(self, state, ddqn_a, exploration_rate):
 
-        # state = self.embedding_layer.forward(state)
+        state = self.embedding_layer.forward(state)
 
-        self.Actor.train()
+        self.Actor.eval()
         with torch.no_grad():
-            action = self.Actor.forward(state, pg_a)
-        # self.Actor.train()
+            action = self.Actor.forward(state, ddqn_a)
+        self.Actor.train()
+
         random_seeds = torch.rand(len(state), 1).to(self.device)
 
         random_action = torch.softmax(torch.abs(torch.normal(action, exploration_rate)), dim=1)
@@ -212,10 +176,12 @@ class DDPG():
 
         return actions
 
-    def choose_best_action(self, state, pg_a):
+    def choose_best_action(self, state, ddqn_a):
+        state = self.embedding_layer.forward(state)
+
         self.Actor.eval()
         with torch.no_grad():
-            action = self.Actor.forward(state, pg_a)
+            action = self.Actor.forward(state, ddqn_a)
 
         return action
 
@@ -232,21 +198,22 @@ class DDPG():
 
         batch_memory_states = self.memory_state[sample_index, :].long()
         batch_memory_action_rewards = self.memory_action_reward[sample_index, :]
-        batch_memory_pg_actions = self.memory_pg_action[sample_index, :]
+        batch_memory_ddqn_actions = self.memory_ddqn_action[sample_index, :]
 
-        # b_s = self.embedding_layer.forward(batch_memory_states)
-        b_s = batch_memory_states
+        b_s = self.embedding_layer.forward(batch_memory_states)
+        # b_s = batch_memory_states
         b_a = batch_memory_action_rewards[:, 0: self.action_nums]
         b_r = torch.unsqueeze(batch_memory_action_rewards[:, self.action_nums], 1)
-        # b_s_ = self.embedding_layer.forward(batch_memory_states)
-        b_s_ = batch_memory_states
+        b_s_ = self.embedding_layer.forward(batch_memory_states)
+        # b_s_ = batch_memory_states
 
-        return b_s, b_a, b_r, b_s_, batch_memory_pg_actions
+        return b_s, b_a, b_r, b_s_, batch_memory_ddqn_actions
 
-    def learn_c(self, b_s, b_a, b_r, b_s_, b_pg_a):
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_, b_pg_a), b_pg_a)
-        q = self.Critic.forward(b_s, b_a, b_pg_a)
-        td_error = F.smooth_l1_loss(q, q_target.detach())
+    def learn_c(self, b_s, b_a, b_r, b_s_, b_ddqn_a):
+        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_, b_ddqn_a), b_ddqn_a).detach()
+        q = self.Critic.forward(b_s, b_a, b_ddqn_a)
+
+        td_error = self.loss_func(q, q_target)
 
         self.optimizer_c.zero_grad()
         td_error.backward()
@@ -256,16 +223,15 @@ class DDPG():
 
         return td_error_r
 
-    def learn_a(self, b_s, b_pg_a):
-        a_loss = -self.Critic.forward(b_s, self.Actor.forward(b_s, b_pg_a), b_pg_a).mean()
+    def learn_a(self, b_s, b_ddqn_a):
+
+        a_loss = -self.Critic.forward(b_s, self.Actor.forward(b_s, b_ddqn_a), b_ddqn_a).mean()
 
         self.optimizer_a.zero_grad()
         a_loss.backward()
         self.optimizer_a.step()
 
         a_loss_r = a_loss.item()
-
-        torch.cuda.empty_cache()
 
         return a_loss_r
 

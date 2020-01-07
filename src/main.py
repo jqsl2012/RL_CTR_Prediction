@@ -28,7 +28,7 @@ def setup_seed(seed):
 def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
 
     ddqn_model = Model.DoubleDQN(feature_nums, field_nums, latent_dims,
-                                    action_nums=action_nums, memory_size=memory_size, batch_size=batch_size, device=device)
+                                    campaign_id=campaign_id, action_nums=action_nums, memory_size=memory_size, batch_size=batch_size, device=device)
     ddpg_for_pg_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
                                                campaign_id=campaign_id, batch_size=batch_size,
@@ -316,15 +316,15 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
         with_clk_rewards = torch.where(
             current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
-            current_basic_rewards[current_with_clk_indexs] * 1e3,
-            current_basic_rewards[current_with_clk_indexs] * -1e3
+            current_basic_rewards[current_with_clk_indexs] * 1,
+            current_basic_rewards[current_with_clk_indexs] * -1
         )
 
         without_clk_rewards = torch.where(
             current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
-            current_basic_rewards[current_without_clk_indexs] * 1e3,
-            current_basic_rewards[current_without_clk_indexs] * -1e3
+            current_basic_rewards[current_without_clk_indexs] * 1,
+            current_basic_rewards[current_without_clk_indexs] * -1
         )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -379,8 +379,6 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
             actions = ddqn_model.choose_best_action(features)
             prob_weights = ddpg_for_pg_model.choose_best_action(features, actions.float())
 
-            # print(prob_weights)
-            # print(len((actions == 2).nonzero()), len((actions == 3).nonzero()), len((actions == 4).nonzero()), len((actions == 5).nonzero()), len((actions == 6).nonzero()))
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -455,8 +453,11 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     IPNN.load_state_dict(IPNN_pretrain_params)
     IPNN.eval()
 
-    model_dict = {0: IPNN.to(device), 1: FM.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: WandD.to(device), 5: FFM.to(device)}
+    model_dict = {0: IPNN.to(device), 1: FM.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: WandD.to(device)}
+    # model_dict = {0: IPNN.to(device), 1: FM.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: WandD.to(device), 5: FFM.to(device)}
 
+    # model_dict = {0: IPNN.to(device), 1: DeepFM.to(device), 2: FNN.to(device), 3: WandD.to(device), 4: FFM.to(device)}
+    #
     model_dict_len = len(model_dict)
 
     memory_size = round(len(train_data), -6)

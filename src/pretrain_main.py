@@ -252,7 +252,7 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3358, 3386, 3427, 3476')
-    parser.add_argument('--model_name', default='OPNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN')
+    parser.add_argument('--model_name', default='W&D', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN')
     parser.add_argument('--latent_dims', default=5)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)

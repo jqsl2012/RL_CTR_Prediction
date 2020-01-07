@@ -15,12 +15,6 @@ def setup_seed(seed):
 # 设置随机数种子
 setup_seed(1)
 
-neuron_nums_1 = 1024
-neuron_nums_2 = 512
-neuron_nums_3 = 256
-neuron_nums_4 = 128
-
-
 class Net(nn.Module):
     def __init__(self, field_nums, feature_nums, latent_dims, action_nums):
         super(Net, self).__init__()
@@ -28,29 +22,22 @@ class Net(nn.Module):
         self.feature_nums = feature_nums
         self.latent_dims = latent_dims
 
-        input_dims = 0
-        for i in range(self.field_nums):
-            for j in range(i + 1, self.field_nums):
-                input_dims += 1
-        input_dims += self.field_nums
-        self.input_dims = input_dims
+        self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
-        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims)
-
+        deep_input_dims = self.input_dims
         layers = list()
         neuron_nums = 512
         for i in range(4):
-            layers.append(nn.Linear(input_dims, neuron_nums))
+            layers.append(nn.Linear(deep_input_dims, neuron_nums))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
-            input_dims = neuron_nums
+            layers.append(nn.BatchNorm1d(neuron_nums))
+            deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
-        layers.append(nn.Linear(input_dims, action_nums))
+        layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
-        input = self.embedding_layer.forward(input)
         actions_value = self.mlp(input)
 
         return actions_value
@@ -62,6 +49,7 @@ class DoubleDQN:
             feature_nums,  # 状态的特征数量
             field_nums,
             latent_dims,
+            campaign_id='1458',
             action_nums=3,  # 动作的数量
             learning_rate=1e-3,  # 学习率
             reward_decay=1,  # 奖励折扣因子,偶发过程为1
@@ -80,6 +68,7 @@ class DoubleDQN:
         self.memory_size = memory_size  # 记忆上限
         self.batch_size = batch_size  # 每次更新时从 memory 里面取多少记忆出来
         self.device = device
+        self.campaign_id = campaign_id
 
         # hasattr(object, name)
         # 判断一个对象里面是否有name属性或者name方法，返回BOOL值，有name特性返回True， 否则返回False。
@@ -92,6 +81,9 @@ class DoubleDQN:
 
         # 将经验池<状态-动作-奖励-下一状态>中的转换组初始化为0
         self.memory = torch.zeros(size=[self.memory_size, self.field_nums + 2]).to(self.device)
+
+        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims, self.campaign_id).to(self.device)
+        self.embedding_layer.load_embedding()
 
         # 创建target_net（目标神经网络），eval_net（训练神经网络）
         self.eval_net, self.target_net = Net(self.field_nums, self.feature_nums, self.latent_dims, self.action_nums).to(self.device), Net(
@@ -125,11 +117,11 @@ class DoubleDQN:
     def choose_action(self, states, exploration_rate):
         torch.cuda.empty_cache()
 
-        # states = self.embedding_layer.forward(states)
-        self.eval_net.train()
+        states = self.embedding_layer.forward(states)
+        self.eval_net.eval()
         with torch.no_grad():
             action_values = self.eval_net.forward(states)
-        # self.eval_net.train()
+        self.eval_net.train()
 
         random_seeds = torch.rand(len(states), 1).to(self.device)
         max_action = torch.argsort(-action_values)[:, 0] + 2
@@ -143,9 +135,9 @@ class DoubleDQN:
 
     # 选择最优动作
     def choose_best_action(self, states):
-        # states = self.embedding_layer.forward(states)
-        self.eval_net.eval()
+        states = self.embedding_layer.forward(states)
 
+        self.eval_net.eval()
         with torch.no_grad():
             action_values = self.eval_net.forward(states)
             action = torch.argsort(-action_values)[:, 0] + 2
@@ -176,12 +168,12 @@ class DoubleDQN:
         # 获取到q_next（target_net产生）以及q_eval（eval_net产生）
         # 如store_transition函数中存储所示，state存储在[0, feature_nums-1]的位置（即前feature_numbets）
         # state_存储在[feature_nums+1，memory_size]（即后feature_nums的位置）
-        b_s = batch_memory[:, :self.field_nums]
-        # b_s = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
+        # b_s = batch_memory[:, :self.field_nums]
+        b_s = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
         b_a = batch_memory[:, self.field_nums: self.field_nums + 1]
         b_r = batch_memory[:, self.field_nums + 1].view(-1, 1).float()
-        b_s_ = batch_memory[:, :self.field_nums]
-        # b_s_ = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
+        # b_s_ = batch_memory[:, :self.field_nums]
+        b_s_ = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
 
         # q_eval w.r.t the action in experience
         q_eval = self.eval_net.forward(b_s).gather(1, b_a - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
