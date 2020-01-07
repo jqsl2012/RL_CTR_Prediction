@@ -24,13 +24,16 @@ class Net(nn.Module):
 
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
+        self.bn_input = nn.BatchNorm1d(self.input_dims)
+
         deep_input_dims = self.input_dims
         layers = list()
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.ReLU())
             layers.append(nn.BatchNorm1d(neuron_nums))
+            layers.append(nn.ReLU())
+            # layers.append(nn.Dropout(neuron_nums))
             deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
         layers.append(nn.Linear(deep_input_dims, action_nums))
@@ -38,6 +41,8 @@ class Net(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
+        input = self.bn_input(input)
+
         actions_value = self.mlp(input)
 
         return actions_value

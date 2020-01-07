@@ -26,7 +26,7 @@ class Actor(nn.Module):
         deep_input_dims = self.input_dims + 1
         layers = list()
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
             layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
@@ -56,10 +56,12 @@ class Critic(nn.Module):
 
         self.bn_f_s = nn.BatchNorm1d(neuron_nums_1)
 
+        self.dp = nn.Dropout(p=0.2)
+
         deep_input_dims = neuron_nums_1 + action_nums
         layers = list()
         neuron_nums_2 = neuron_nums_1 // 2
-        for i in range(4):
+        for i in range(2):
             layers.append(nn.Linear(deep_input_dims, neuron_nums_2))
             layers.append(nn.BatchNorm1d(neuron_nums_2))
             layers.append(nn.ReLU())
@@ -73,10 +75,10 @@ class Critic(nn.Module):
         input = torch.cat([input, ddqn_a], dim=1)
         input = self.bn_input(input)
 
-        f_s = F.relu(self.fc_s(input))
+        f_s = F.relu(self.bn_f_s(self.fc_s(input)))
 
-        cat = torch.cat([self.bn_f_s(f_s), action], dim=1)
-        
+        cat = torch.cat([f_s, action], dim=1)
+
         q_out = self.layer2_mlp(cat)
 
         return q_out
@@ -89,7 +91,7 @@ class DDPG():
             latent_dims=5,
             action_nums=2,
             campaign_id='1458',
-            lr_A=1e-3,
+            lr_A=1e-4,
             lr_C=1e-3,
             reward_decay=1,
             memory_size=4096000,

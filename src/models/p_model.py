@@ -122,10 +122,11 @@ class WideAndDeep(nn.Module):
         layers = list()
 
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            layers.append(nn.Dropout(p=0.5))
             deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
 
@@ -164,10 +165,11 @@ class InnerPNN(nn.Module):
         layers = list()
 
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            layers.append(nn.Dropout(p=0.5))
             deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
 
@@ -224,10 +226,11 @@ class OuterPNN(nn.Module):
         layers = list()
 
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            layers.append(nn.Dropout(p=0.5))
             deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
 
@@ -286,10 +289,11 @@ class DeepFM(nn.Module):
         layers = list()
 
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            layers.append(nn.Dropout(p=0.5))
             deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
 
@@ -342,10 +346,11 @@ class FNN(nn.Module):
         layers = list()
 
         neuron_nums = 512
-        for i in range(4):
+        for i in range(3):
             layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+            # layers.append(nn.BatchNorm1d(neuron_nums))
             layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.5))
             deep_input_dims = neuron_nums
             neuron_nums = int(neuron_nums / 2)
 
