@@ -39,6 +39,10 @@ def get_model(model_name, feature_nums, field_nums, latent_dims):
         return Model.InnerPNN(feature_nums, field_nums, latent_dims)
     elif model_name == 'OPNN':
         return Model.OuterPNN(feature_nums, field_nums, latent_dims)
+    elif model_name == 'DCN':
+        return Model.DCN(feature_nums, field_nums, latent_dims)
+    elif model_name == 'AFM':
+        return Model.AFM(feature_nums, field_nums, latent_dims)
 
 def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
     data_path = datapath + dataset_name + campaign_id
@@ -252,8 +256,8 @@ if __name__ == '__main__':
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3358, 3386, 3427, 3476')
-    parser.add_argument('--model_name', default='FNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN')
-    parser.add_argument('--latent_dims', default=5)
+    parser.add_argument('--model_name', default='OPNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
+    parser.add_argument('--latent_dims', default=8)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)

@@ -25,13 +25,14 @@ class Actor(nn.Module):
 
         deep_input_dims = self.input_dims + 1
         layers = list()
-        neuron_nums = 512
-        for i in range(3):
-            layers.append(nn.Linear(deep_input_dims, neuron_nums))
-            layers.append(nn.BatchNorm1d(neuron_nums))
+        neuron_nums = [300, 300, 300]
+        for neuron_num in neuron_nums:
+            layers.append(nn.Linear(deep_input_dims, neuron_num))
+            layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            deep_input_dims = neuron_nums
-            neuron_nums = int(neuron_nums / 2)
+            layers.append(nn.Dropout(p=0.5))
+            deep_input_dims = neuron_num
+            # neuron_nums = int(neuron_nums / 2)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -49,7 +50,7 @@ class Critic(nn.Module):
     def __init__(self, input_dims, action_nums):
         super(Critic, self).__init__()
 
-        neuron_nums_1 = 512
+        neuron_nums_1 = 300
         self.fc_s = nn.Linear(input_dims + 1, neuron_nums_1)
 
         self.bn_input = nn.BatchNorm1d(input_dims + 1)
@@ -60,13 +61,15 @@ class Critic(nn.Module):
 
         deep_input_dims = neuron_nums_1 + action_nums
         layers = list()
-        neuron_nums_2 = neuron_nums_1 // 2
-        for i in range(2):
-            layers.append(nn.Linear(deep_input_dims, neuron_nums_2))
-            layers.append(nn.BatchNorm1d(neuron_nums_2))
+        # neuron_nums_2 = neuron_nums_1 // 2
+        neuron_nums_2 = [300, 300]
+        for neuron_num in neuron_nums_2:
+            layers.append(nn.Linear(deep_input_dims, neuron_num))
+            layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            deep_input_dims = neuron_nums_2
-            neuron_nums_2 = int(neuron_nums_2 / 2)
+            layers.append(nn.Dropout(p=0.5))
+            deep_input_dims = neuron_num
+            # neuron_nums_2 = int(neuron_nums_2 / 2)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.layer2_mlp = nn.Sequential(*layers)

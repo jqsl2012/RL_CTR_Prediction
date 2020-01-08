@@ -342,6 +342,7 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
             actions = ddqn_model.choose_best_action(features)
             prob_weights = ddpg_for_pg_model.choose_best_action(features, actions.float())
 
+            print(prob_weights)
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -410,13 +411,13 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     FNN.load_state_dict(FNN_pretrain_params)
     FNN.eval()
 
-    OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
-    OPNN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'OPNNbest.pth')
-    OPNN.load_embedding(FM_pretain_params)
-    OPNN.load_state_dict(OPNN_pretrain_params)
-    OPNN.eval()
+    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    IPNN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'IPNNbest.pth')
+    IPNN.load_embedding(FM_pretain_params)
+    IPNN.load_state_dict(IPNN_pretrain_params)
+    IPNN.eval()
 
-    model_dict = {0: OPNN.to(device), 1: FM.to(device), 2: WandD.to(device), 3: FFM.to(device)}
+    model_dict = {0: IPNN.to(device), 1: FM.to(device), 2: WandD.to(device), 3: FFM.to(device), 4: FNN.to(device)}
     # model_dict = {0: DeepFM.to(device), 1: WandD.to(device), 2: FFM.to(device),
     #               3: FNN.to(device)}
 
