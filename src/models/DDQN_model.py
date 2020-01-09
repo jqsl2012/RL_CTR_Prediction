@@ -28,12 +28,12 @@ class Net(nn.Module):
 
         deep_input_dims = self.input_dims
         layers = list()
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [500, 500, 500]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.5))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
             # neuron_nums = int(neuron_nums / 2)
         layers.append(nn.Linear(deep_input_dims, action_nums))

@@ -122,12 +122,17 @@ class WideAndDeep(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
+            layers.append(nn.BatchNorm1d(neuron_num))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
 
         layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
@@ -154,38 +159,32 @@ class InnerPNN(nn.Module):
         self.field_nums = field_nums
         self.latent_dims = latent_dims
 
-        self.linear = nn.Embedding(self.feature_nums, output_dim)
-        nn.init.xavier_normal_(self.linear.weight.data)
-        self.bias = nn.Parameter(torch.zeros((output_dim,)))
-
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
         deep_input_dims = self.field_nums * self.latent_dims + self.field_nums * (self.field_nums - 1) // 2
         layers = list()
 
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
+            layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
 
         layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
-
-    def load_embedding(self, pretrain_params):
-        self.feature_embedding.weight.data.copy_(
-            torch.from_numpy(
-                np.array(pretrain_params['feature_embedding.weight'].cpu())
-            )
-        )
 
     def forward(self, x):
         """
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        embedding_x = self.feature_embedding(x).detach()
+        embedding_x = self.feature_embedding(x)
 
         inner_product_vectors = torch.FloatTensor().cuda()
         for i in range(self.field_nums - 1):
@@ -213,21 +212,22 @@ class OuterPNN(nn.Module):
         self.field_nums = field_nums
         self.latent_dims = latent_dims
 
-        self.linear = nn.Embedding(self.feature_nums, output_dim)
-        nn.init.xavier_normal_(self.linear.weight.data)
-        self.bias = nn.Parameter(torch.zeros((output_dim,)))
-
         self.feature_embedding = nn.Embedding(self.feature_nums, self.latent_dims)
 
         deep_input_dims = self.latent_dims + self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
+            layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
 
         layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
@@ -236,19 +236,12 @@ class OuterPNN(nn.Module):
         self.kernel = nn.Parameter(torch.ones((self.latent_dims, self.latent_dims)))
         nn.init.xavier_normal_(self.kernel.data)
 
-    def load_embedding(self, pretrain_params):
-        self.feature_embedding.weight.data.copy_(
-            torch.from_numpy(
-                np.array(pretrain_params['feature_embedding.weight'].cpu())
-            )
-        )
-
     def forward(self, x):
         """
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        embedding_x = self.feature_embedding(x).detach()
+        embedding_x = self.feature_embedding(x)
 
         sum_embedding_x = torch.sum(embedding_x, dim=1).unsqueeze(1)
         outer_product = torch.mul(torch.mul(sum_embedding_x, self.kernel), sum_embedding_x)
@@ -283,15 +276,21 @@ class DeepFM(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
+            layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.2))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
+
         layers.append(nn.Linear(deep_input_dims, 1))
-        self.mlp = nn.Sequential(*layers)
+        self.mlp = nn.Sequential(*layers) #   7141262125646409
+
 
     def to_fm(self, x):
         """
@@ -338,12 +337,17 @@ class FNN(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.ReLU()) # 8765739181111648
-            layers.append(nn.Dropout(p=0.2))
+            layers.append(nn.BatchNorm1d(neuron_num))
+            layers.append(nn.ReLU())
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
 
         layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
@@ -360,7 +364,7 @@ class FNN(nn.Module):
             :param x: Int tensor of size (batch_size, feature_nums, latent_nums)
             :return: pctrs
         """
-        embedding_x = self.feature_embedding(x).detach()
+        embedding_x = self.feature_embedding(x)
         out = self.mlp(embedding_x.view(-1, self.field_nums * self.latent_dims))
 
         return torch.sigmoid(out)
@@ -383,26 +387,37 @@ class DCN(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
 
         deep_net_layers = list()
-        neural_nums = [500, 500, 500]
-        self.num_neural_layers = len(neural_nums)
+        neural_nums = [512, 512, 512]
+        self.num_neural_layers = 4
 
         for neural_num in neural_nums:
             deep_net_layers.append(nn.Linear(deep_input_dims, neural_num))
+            deep_net_layers.append(nn.BatchNorm1d(neural_num))
             deep_net_layers.append(nn.ReLU())
-            deep_net_layers.append(nn.Dropout(p=0.2))
+            # deep_net_layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neural_num
+
+        for i, layer in enumerate(deep_net_layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
+
         self.DN = nn.Sequential(*deep_net_layers)
 
         cross_input_dims = self.field_nums * self.latent_dims
         self.cross_net_w = nn.ModuleList([
             nn.Linear(cross_input_dims, output_dim, bias=False) for _ in range(self.num_neural_layers)
         ])
+        for cross_w in self.cross_net_w:
+            nn.init.xavier_normal_(cross_w.weight.data)
 
         self.cross_net_b = nn.ParameterList([
             nn.Parameter(torch.zeros((cross_input_dims,))) for _ in range(self.num_neural_layers)
         ])
+        for cross_b in self.cross_net_b:
+            nn.init.xavier_normal_(cross_b.weight.data)
 
         self.linear = nn.Linear(neural_nums[-1] + self.field_nums * self.latent_dims, output_dim)
+        nn.init.xavier_normal_(self.linear.weight.data)
 
     def forward(self, x):
         embedding_x = self.feature_embedding(x).view(-1, self.field_nums * self.latent_dims)
@@ -441,8 +456,11 @@ class AFM(nn.Module):
 
         self.attention_net = nn.Linear(self.latent_dims, attention_factor) # 隐层神经元数量可以变化,不一定为输入的长度
         nn.init.xavier_normal_(self.attention_net.weight.data)
+        self.attention_net_bn = nn.BatchNorm1d(attention_factor)
+
         self.attention_softmax = nn.Linear(attention_factor, 1)
         nn.init.xavier_normal_(self.attention_softmax.weight.data)
+
         self.fc = nn.Linear(self.latent_dims, output_dim)
         nn.init.xavier_normal_(self.fc.weight.data)
 
@@ -455,13 +473,10 @@ class AFM(nn.Module):
 
         inner_product = torch.mul(embedding_x[:, self.row], embedding_x[:, self.col])
 
-        attn_scores = F.relu(self.attention_net(inner_product))
-        attn_scores = F.dropout(attn_scores, p=0.5)
+        attn_scores = F.relu(self.attention_net_bn(self.attention_net(inner_product)))
         attn_scores = F.softmax(self.attention_softmax(attn_scores), dim=1)
-        attn_scores = F.dropout(attn_scores, p=0.5)
 
         attn_output = torch.sum(torch.mul(attn_scores, inner_product), dim=1) # shape: batch_size-latent_dims
-        attn_output = F.dropout(attn_output, p=0.5)
 
         out = self.bias + torch.sum(self.linear(x), dim=1) + self.fc(attn_output)
 

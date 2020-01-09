@@ -25,14 +25,13 @@ class Actor(nn.Module):
 
         deep_input_dims = self.input_dims + 1
         layers = list()
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [500, 500, 500]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.5))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
-            # neuron_nums = int(neuron_nums / 2)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -50,26 +49,27 @@ class Critic(nn.Module):
     def __init__(self, input_dims, action_nums):
         super(Critic, self).__init__()
 
-        neuron_nums_1 = 300
+        neuron_nums_1 = 500
         self.fc_s = nn.Linear(input_dims + 1, neuron_nums_1)
 
         self.bn_input = nn.BatchNorm1d(input_dims + 1)
 
         self.bn_f_s = nn.BatchNorm1d(neuron_nums_1)
 
+        self.bn_s_a = nn.BatchNorm1d(neuron_nums_1 + action_nums)
+
         self.dp = nn.Dropout(p=0.2)
 
         deep_input_dims = neuron_nums_1 + action_nums
         layers = list()
         # neuron_nums_2 = neuron_nums_1 // 2
-        neuron_nums_2 = [300, 300]
+        neuron_nums_2 = [500, 500]
         for neuron_num in neuron_nums_2:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            layers.append(nn.Dropout(p=0.5))
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
-            # neuron_nums_2 = int(neuron_nums_2 / 2)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.layer2_mlp = nn.Sequential(*layers)
@@ -78,9 +78,10 @@ class Critic(nn.Module):
         input = torch.cat([input, ddqn_a], dim=1)
         input = self.bn_input(input)
 
-        f_s = F.relu(self.bn_f_s(self.fc_s(input)))
+        f_s = F.relu(self.fc_s(input))
 
         cat = torch.cat([f_s, action], dim=1)
+        cat = self.bn_s_a(cat)
 
         q_out = self.layer2_mlp(cat)
 

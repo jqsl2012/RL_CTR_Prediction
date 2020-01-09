@@ -258,37 +258,37 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             current_y_preds = torch.sum(torch.mul(current_softmax_weights, current_row_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
 
-        with_clk_rewards = torch.where(
-            current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
-                current_with_clk_indexs].mean(dim=1).view(-1, 1),
-            current_y_preds[current_with_clk_indexs] - current_pretrain_y_preds[
-                current_with_clk_indexs].mean(dim=1).view(-1, 1),
-            current_pretrain_y_preds[
-                current_with_clk_indexs].mean(dim=1).view(-1, 1) - current_y_preds[current_with_clk_indexs]
-        )
-
-        without_clk_rewards = torch.where(
-            current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
-                current_without_clk_indexs].mean(dim=1).view(-1, 1),
-            current_pretrain_y_preds[
-                current_without_clk_indexs].mean(dim=1).view(-1, 1) - current_y_preds[current_without_clk_indexs],
-            current_y_preds[current_without_clk_indexs] - current_pretrain_y_preds[
-                current_without_clk_indexs].mean(dim=1).view(-1, 1)
-        )
-
         # with_clk_rewards = torch.where(
         #     current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
         #         current_with_clk_indexs].mean(dim=1).view(-1, 1),
-        #     current_basic_rewards[current_with_clk_indexs] * 1,
-        #     current_basic_rewards[current_with_clk_indexs] * -1
+        #     current_y_preds[current_with_clk_indexs] - current_pretrain_y_preds[
+        #         current_with_clk_indexs].mean(dim=1).view(-1, 1),
+        #     current_pretrain_y_preds[
+        #         current_with_clk_indexs].mean(dim=1).view(-1, 1) - current_y_preds[current_with_clk_indexs]
         # )
         #
         # without_clk_rewards = torch.where(
         #     current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
         #         current_without_clk_indexs].mean(dim=1).view(-1, 1),
-        #     current_basic_rewards[current_without_clk_indexs] * 1,
-        #     current_basic_rewards[current_without_clk_indexs] * -1
+        #     current_pretrain_y_preds[
+        #         current_without_clk_indexs].mean(dim=1).view(-1, 1) - current_y_preds[current_without_clk_indexs],
+        #     current_y_preds[current_without_clk_indexs] - current_pretrain_y_preds[
+        #         current_without_clk_indexs].mean(dim=1).view(-1, 1)
         # )
+
+        with_clk_rewards = torch.where(
+            current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
+                current_with_clk_indexs].mean(dim=1).view(-1, 1),
+            current_basic_rewards[current_with_clk_indexs] * 1,
+            current_basic_rewards[current_with_clk_indexs] * -1
+        )
+
+        without_clk_rewards = torch.where(
+            current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
+                current_without_clk_indexs].mean(dim=1).view(-1, 1),
+            current_basic_rewards[current_without_clk_indexs] * 1,
+            current_basic_rewards[current_without_clk_indexs] * -1
+        )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
         current_basic_rewards[current_without_clk_indexs] = without_clk_rewards
@@ -342,7 +342,10 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
             actions = ddqn_model.choose_best_action(features)
             prob_weights = ddpg_for_pg_model.choose_best_action(features, actions.float())
 
-            print(prob_weights)
+            # x = torch.argsort(prob_weights)[:, 0]
+            # print(len((actions == 2).nonzero()), len((x == 3).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
+            #
+            # print(len((x == 0).nonzero()), len((x == 1).nonzero()), len((x == 2).nonzero()), len((x == 3).nonzero()), len((x == 4).nonzero()))
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -385,10 +388,10 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     valid_data_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretain_params)
-    FFM.eval()
+    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    # FFM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FFMbest.pth')
+    # FFM.load_state_dict(FFM_pretain_params)
+    # FFM.eval()
 
     FM = p_model.FM(feature_nums, latent_dims)
     FM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FMbest.pth')
@@ -417,7 +420,13 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     IPNN.load_state_dict(IPNN_pretrain_params)
     IPNN.eval()
 
-    model_dict = {0: IPNN.to(device), 1: FM.to(device), 2: WandD.to(device), 3: FFM.to(device), 4: FNN.to(device)}
+    DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
+    DCN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'DCNbest.pth')
+    # DCN.load_embedding(FM_pretain_params)
+    DCN.load_state_dict(DCN_pretrain_params)
+    DCN.eval()
+
+    model_dict = {0: IPNN.to(device), 1: WandD.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: DCN.to(device)}
     # model_dict = {0: DeepFM.to(device), 1: WandD.to(device), 2: FFM.to(device),
     #               3: FNN.to(device)}
 
@@ -523,7 +532,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='PG_DDPG', help='LR, FM, FFM, W&D')
-    parser.add_argument('--latent_dims', default=5)
+    parser.add_argument('--latent_dims', default=8)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)

@@ -6,6 +6,10 @@ from datetime import datetime
 import argparse
 import pandas as pd
 
+'''
+ 只取训练集做测试
+'''
+
 def data_to_csv(datapath, is_to_csv):
     file_name = 'train.log.txt'
     data_path = datapath
