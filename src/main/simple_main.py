@@ -270,7 +270,7 @@ def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', default='../data/')
+    parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
@@ -284,7 +284,7 @@ if __name__ == '__main__':
     parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--save_param_dir', default='models/model_params/')
+    parser.add_argument('--save_param_dir', default='../models/model_params/')
 
     args = parser.parse_args()
 

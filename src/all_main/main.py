@@ -36,48 +36,24 @@ def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, me
     return ddqn_model, ddpg_for_pg_Model
 
 
-def get_dataset(datapath, dataset_name, campaign_id, valid_day, test_day):
+def get_dataset(datapath, dataset_name, campaign_id):
     data_path = datapath + dataset_name + campaign_id
-    data_file_name = 'train.txt'
-    day_index_file_name = 'day_index.csv'
+    train_data_file_name = 'train_.txt'
+    train_fm = pd.read_csv(data_path + train_data_file_name, header=None).values.astype(int)
 
-    train_fm = pd.read_csv(data_path + data_file_name, header=None).values.astype(int)
+    test_data_file_name = 'test_.txt'
+    test_fm = pd.read_csv(data_path + test_data_file_name, header=None).values.astype(int)
 
-    field_nums = len(train_fm[0, 1:]) # 特征域的数量
-    feature_nums = np.max(train_fm[:, 1:].flatten()) + 1 # 特征数量
+    field_nums = len(train_fm[0, 1:])  # 特征域的数量
 
-    day_indexs = pd.read_csv(data_path + day_index_file_name, header=None).values
-    days = day_indexs[:, 0] # 数据集中有的日期
-    days_list = days.tolist()
-    days_list.pop(days_list.index(valid_day))
-    days_list.pop(days_list.index(test_day))
+    feature_index_name = 'featindex.txt'
+    feature_index = pd.read_csv(data_path + feature_index_name, header=None).values
+    feature_nums = int(feature_index[-1, 0].split('\t')[1]) + 1 # 特征数量
 
-    train_data = np.array([])
-    for i, day in enumerate(days_list): # 生成训练集
-        current_day_index = day_indexs[days == day]
-        data_index_start = current_day_index[0, 1]
-        data_index_end = current_day_index[0, 2] + 1
+    train_data = train_fm
+    test_data = test_fm
 
-        data_ = train_fm[data_index_start: data_index_end, :]
-        if i == 0:
-            train_data = data_
-        else:
-            train_data = np.concatenate((train_data, data_), axis=0)
-
-    # 生成验证集
-    valid_day_index = day_indexs[days == valid_day]
-    valid_index_start = valid_day_index[0, 1]
-    valid_index_end = valid_day_index[0, 2] + 1
-
-    valid_data = train_fm[valid_index_start: valid_index_end, :]
-
-    # 生成测试集
-    test_day_index = day_indexs[days == test_day]
-    test_index_start = test_day_index[0, 1]
-    test_index_end = test_day_index[0, 2] + 1
-    test_data = train_fm[test_index_start: test_index_end, :]
-
-    return train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums
+    return train_fm, train_data, test_data, field_nums, feature_nums
 
 
 # def generate_preds(model_dict, features, actions, prob_weights, labels, device, mode):
@@ -372,66 +348,57 @@ def submission(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, device):
     return predicts, roc_auc_score(targets, predicts)
 
 
-def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims, model_name, epoch, learning_rate,
+def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, learning_rate,
          weight_decay, early_stop_type, batch_size, device, save_param_dir, ou_noise_obj):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
     device = torch.device(device) # 指定运行设备
-    train_fm, day_indexs, train_data, valid_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id, valid_day, test_day)
+    train_fm, train_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id)
 
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
-    valid_dataset = Data.libsvm_dataset(valid_data[:, 1:], valid_data[:, 0])
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8)
-    valid_data_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    # FFM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FFMbest.pth')
-    # FFM.load_state_dict(FFM_pretain_params)
-    # FFM.eval()
+    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    FFM_pretain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    FFM.load_state_dict(FFM_pretain_params)
+    FFM.eval()
 
-    FM = p_model.FM(feature_nums, latent_dims)
-    FM_pretain_params = torch.load('models/model_params/' + campaign_id + 'FMbest.pth')
-    FM.load_state_dict(FM_pretain_params)
-    FM.eval()
+    # FM = p_model.FM(feature_nums, latent_dims)
+    # FM_pretain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
+    # FM.load_state_dict(FM_pretain_params)
+    # FM.eval()
 
-    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
-    WandD_pretrain_params = torch.load('models/model_params/' + campaign_id + 'W&Dbest.pth')
-    WandD.load_state_dict(WandD_pretrain_params)
-    WandD.eval()
+    # WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    # WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    # WandD.load_state_dict(WandD_pretrain_params)
+    # WandD.eval()
 
     DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
-    DeepFM_pretrain_params = torch.load('models/model_params/' + campaign_id + 'DeepFMbest.pth')
+    DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
     DeepFM.load_state_dict(DeepFM_pretrain_params)
     DeepFM.eval()
 
     FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
-    FNN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'FNNbest.pth')
-    FNN.load_embedding(FM_pretain_params)
+    FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
     FNN.load_state_dict(FNN_pretrain_params)
     FNN.eval()
 
     IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
-    IPNN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'IPNNbest.pth')
-    IPNN.load_embedding(FM_pretain_params)
+    IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
     IPNN.load_state_dict(IPNN_pretrain_params)
     IPNN.eval()
 
     DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
-    DCN_pretrain_params = torch.load('models/model_params/' + campaign_id + 'DCNbest.pth')
-    # DCN.load_embedding(FM_pretain_params)
+    DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
     DCN.load_state_dict(DCN_pretrain_params)
     DCN.eval()
 
-    model_dict = {0: IPNN.to(device), 1: WandD.to(device), 2: DeepFM.to(device), 3: FNN.to(device), 4: DCN.to(device)}
-    # model_dict = {0: DeepFM.to(device), 1: WandD.to(device), 2: FFM.to(device),
-    #               3: FNN.to(device)}
+    model_dict = {0: IPNN.to(device), 1: DeepFM.to(device), 2: FNN.to(device), 3: DCN.to(device), 4: FFM.to(device)}
 
-    # model_dict = {0: OPNN.to(device), 1: DeepFM.to(device), 2: FNN.to(device), 3: WandD.to(device), 4: FFM.to(device)}
-    #
     model_dict_len = len(model_dict)
 
     memory_size = round(len(train_data), -6)
@@ -456,7 +423,7 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
         # torch.save(ddqn_model.eval_net.state_dict(), save_param_dir + 'ddqn_model' + str(np.mod(epoch_i, 5)) + '.pth')
         # torch.save(ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
 
-        auc, valid_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, valid_data_loader, loss, device)
+        auc, valid_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
         test_auc_temp, test_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
@@ -492,19 +459,13 @@ def main(data_path, dataset_name, campaign_id, valid_day, test_day, latent_dims,
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
 
-    # 验证集submission
-    valid_predicts, valid_auc = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, valid_data_loader, device)
-    valid_pred_df = pd.DataFrame(data=valid_predicts)
-
-    valid_pred_df.to_csv(submission_path + str(valid_day) + '_test_submission.csv', header=None)
-
     # 测试集submission
     test_predicts, test_auc = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
     test_pred_df = pd.DataFrame(data=test_predicts)
 
-    test_pred_df.to_csv(submission_path + str(test_day) + '_test_submission.csv', header=None)
+    test_pred_df.to_csv(submission_path + 'test_submission.csv', header=None)
 
-    day_aucs = [[valid_day, valid_auc], [test_day, test_auc]]
+    day_aucs = [[test_auc]]
     day_aucs_df = pd.DataFrame(data=day_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
@@ -528,8 +489,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
-    parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='PG_DDPG', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=8)
@@ -552,8 +511,6 @@ if __name__ == '__main__':
         args.data_path,
         args.dataset_name,
         args.campaign_id,
-        args.valid_day,
-        args.test_day,
         args.latent_dims,
         args.model_name,
         args.epoch,

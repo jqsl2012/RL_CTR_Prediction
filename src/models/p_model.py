@@ -388,7 +388,7 @@ class DCN(nn.Module):
 
         deep_net_layers = list()
         neural_nums = [512, 512, 512]
-        self.num_neural_layers = 4
+        self.num_neural_layers = 5
 
         for neural_num in neural_nums:
             deep_net_layers.append(nn.Linear(deep_input_dims, neural_num))
@@ -413,8 +413,6 @@ class DCN(nn.Module):
         self.cross_net_b = nn.ParameterList([
             nn.Parameter(torch.zeros((cross_input_dims,))) for _ in range(self.num_neural_layers)
         ])
-        for cross_b in self.cross_net_b:
-            nn.init.xavier_normal_(cross_b.weight.data)
 
         self.linear = nn.Linear(neural_nums[-1] + self.field_nums * self.latent_dims, output_dim)
         nn.init.xavier_normal_(self.linear.weight.data)
@@ -456,7 +454,6 @@ class AFM(nn.Module):
 
         self.attention_net = nn.Linear(self.latent_dims, attention_factor) # 隐层神经元数量可以变化,不一定为输入的长度
         nn.init.xavier_normal_(self.attention_net.weight.data)
-        self.attention_net_bn = nn.BatchNorm1d(attention_factor)
 
         self.attention_softmax = nn.Linear(attention_factor, 1)
         nn.init.xavier_normal_(self.attention_softmax.weight.data)
@@ -473,7 +470,7 @@ class AFM(nn.Module):
 
         inner_product = torch.mul(embedding_x[:, self.row], embedding_x[:, self.col])
 
-        attn_scores = F.relu(self.attention_net_bn(self.attention_net(inner_product)))
+        attn_scores = F.relu(self.attention_net(inner_product))
         attn_scores = F.softmax(self.attention_softmax(attn_scores), dim=1)
 
         attn_output = torch.sum(torch.mul(attn_scores, inner_product), dim=1) # shape: batch_size-latent_dims

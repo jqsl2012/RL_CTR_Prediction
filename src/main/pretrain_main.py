@@ -253,12 +253,12 @@ def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
 # 用于预训练传统预测点击率模型
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', default='../data/')
+    parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, creti o, yoyi')
     parser.add_argument('--valid_day', default=11, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--test_day', default=12, help='6, 7, 8, 9, 10, 11, 12')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3358, 3386, 3427, 3476')
-    parser.add_argument('--model_name', default='FNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
+    parser.add_argument('--model_name', default='AFM', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
     parser.add_argument('--latent_dims', default=8)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
@@ -266,7 +266,7 @@ if __name__ == '__main__':
     parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
-    parser.add_argument('--save_param_dir', default='models/model_params/')
+    parser.add_argument('--save_param_dir', default='../models/model_params/')
 
     args = parser.parse_args()
 
