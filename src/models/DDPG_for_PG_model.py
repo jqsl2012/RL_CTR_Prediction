@@ -27,7 +27,7 @@ class Actor(nn.Module):
 
         deep_input_dims = self.input_dims + 1
         layers = list()
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -54,7 +54,7 @@ class Critic(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        neuron_nums_1 = 500
+        neuron_nums_1 = 512
         self.fc_s = nn.Linear(input_dims + 1, neuron_nums_1)
 
         self.bn_input = nn.BatchNorm1d(input_dims + 1)
@@ -66,7 +66,7 @@ class Critic(nn.Module):
         deep_input_dims = neuron_nums_1 + action_nums
         layers = list()
 
-        neuron_nums_2 = [500, 500]
+        neuron_nums_2 = [512, 512]
         for neuron_num in neuron_nums_2:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -177,7 +177,7 @@ class DDPG():
 
         random_action = torch.softmax(torch.abs(torch.normal(action, exploration_rate)), dim=1)
 
-        exploration_rate = max(exploration_rate, 0.1)
+        # exploration_rate = max(exploration_rate, 0.1)
         actions = torch.where(random_seeds >= exploration_rate, action,
                               random_action)
 
@@ -199,9 +199,9 @@ class DDPG():
     def sample_batch(self):
         if self.memory_counter > self.memory_size:
             # replacement 代表的意思是抽样之后还放不放回去，如果是False的话，那么出来的三个数都不一样，如果是True的话， 有可能会出现重复的，因为前面的抽的放回去了
-            sample_index = np.random.choice(self.memory_size, size=self.batch_size, replace=False)
+            sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
         else:
-            sample_index = np.random.choice(self.memory_counter, size=self.batch_size)
+            sample_index = torch.LongTensor(random.sample(range(self.memory_counter), self.batch_size)).to(self.device)
 
         batch_memory_states = self.memory_state[sample_index, :].long()
         batch_memory_action_rewards = self.memory_action_reward[sample_index, :]

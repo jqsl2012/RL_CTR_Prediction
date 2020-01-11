@@ -4,6 +4,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from src.models.Feature_embedding import Feature_Embedding
+
+import datetime
+
 np.seterr(all='raise')
 
 def setup_seed(seed):
@@ -30,7 +33,7 @@ class Net(nn.Module):
 
         deep_input_dims = self.input_dims
         layers = list()
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [512, 512, 512]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -130,7 +133,7 @@ class DoubleDQN:
         max_action = torch.argsort(-action_values)[:, 0] + 2
         random_action = torch.randint(low=2, high=self.action_nums + 2, size=[len(states), 1]).to(self.device)
 
-        exploration_rate = max(exploration_rate, 0.1)
+        # exploration_rate = max(exploration_rate, 0.1)
         actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1), random_action)
 
         # 用矩阵来初始
@@ -147,24 +150,29 @@ class DoubleDQN:
 
         return action.view(-1, 1)
 
+    def soft_update(self, net, net_target):
+        for param_target, param in zip(net_target.parameters(), net.parameters()):
+            param_target.data.copy_(param_target.data * (1.0 - 0.001) + param.data * 0.001)
+
     # 定义DQN的学习过程
     def learn(self):
         # 清除显存缓存
         torch.cuda.empty_cache()
 
-        # 检查是否达到了替换target_net参数的步数
-        if self.learn_step_counter % self.replace_target_iter == 0:
-            self.target_net.load_state_dict(self.eval_net.state_dict())
-            # print(('\n目标网络参数已经更新\n'))
-        self.learn_step_counter += 1
+        self.soft_update(self.target_net, self.eval_net)
+        # # 检查是否达到了替换target_net参数的步数
+        # if self.learn_step_counter % self.replace_target_iter == 0:
+        #     self.target_net.load_state_dict(self.eval_net.state_dict())
+        #     # print(('\n目标网络参数已经更新\n'))
+        # self.learn_step_counter += 1
 
         # 训练过程
         # 从memory中随机抽取batch_size的数据
         if self.memory_counter > self.memory_size:
             # replacement 代表的意思是抽样之后还放不放回去，如果是False的话，那么出来的三个数都不一样，如果是True的话， 有可能会出现重复的，因为前面的抽的放回去了
-            sample_index = np.random.choice(self.memory_size, size=self.batch_size, replace=False)
+            sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
         else:
-            sample_index = np.random.choice(self.memory_counter, size=self.batch_size, replace=False)
+            sample_index = torch.LongTensor(random.sample(range(self.memory_counter), self.batch_size)).to(self.device)
 
         batch_memory = self.memory[sample_index, :].long()
 

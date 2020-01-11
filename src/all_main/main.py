@@ -280,6 +280,7 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, 
     total_rewards = 0
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+
         actions = ddqn_model.choose_action(features, exploration_rate)
 
         prob_weights = ddpg_for_pg_model.choose_action(features, actions.float(), exploration_rate)
@@ -290,7 +291,6 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, 
         ddqn_model.store_transition(torch.cat([features, actions, rewards.long()], dim=1))
         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
-
         ddqn_model.learn()
 
         b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
@@ -335,6 +335,8 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
 
 def submission(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, device):
     targets, predicts = list(), list()
+    final_actions = torch.LongTensor().to(device)
+    final_prob_weights = torch.FloatTensor().to(device)
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
@@ -344,8 +346,11 @@ def submission(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, device):
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
+            
+            final_actions = torch.cat([final_actions, actions], dim=0)
+            final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
 
-    return predicts, roc_auc_score(targets, predicts)
+    return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
 
 def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, learning_rate,
@@ -372,10 +377,10 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     # FM.load_state_dict(FM_pretain_params)
     # FM.eval()
 
-    # WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
-    # WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
-    # WandD.load_state_dict(WandD_pretrain_params)
-    # WandD.eval()
+    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    WandD.load_state_dict(WandD_pretrain_params)
+    WandD.eval()
 
     DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
     DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
@@ -401,7 +406,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -6)
+    memory_size = round(len(train_data), -6) * 2
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
     loss = nn.BCELoss()
@@ -424,14 +429,13 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
         # torch.save(ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
 
         auc, valid_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
-        test_auc_temp, test_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training average rewards',
               train_average_rewards, 'validation auc:', auc,
-               'validation loss:', valid_loss, 'test auc', test_auc_temp, '[{}s]'.format((train_end_time - train_start_time).seconds))
+               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         exploration_rate *= 0.95
         # if eva_stopping(valid_aucs, valid_losses, early_stop_type):
@@ -460,7 +464,14 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
         os.mkdir(submission_path)
 
     # 测试集submission
-    test_predicts, test_auc = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
+    test_predicts, test_auc, actions, prob_weights = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
+
+    prob_weights_df = pd.DataFrame(data=prob_weights)
+    prob_weights_df.to_csv(submission_path + 'test_prob_weights.csv', header=None)
+
+    actions_df = pd.DataFrame(data=actions)
+    actions_df.to_csv(submission_path + 'test_actions.csv', header=None)
+
     test_pred_df = pd.DataFrame(data=test_predicts)
 
     test_pred_df.to_csv(submission_path + 'test_submission.csv', header=None)
