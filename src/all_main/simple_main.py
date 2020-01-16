@@ -47,6 +47,7 @@ def get_dataset(datapath, dataset_name, campaign_id):
 
     return train_fm, train_data, test_data, field_nums, feature_nums
 
+
 def reward_functions(y_preds, best_origin_model, features, labels, device):
     best_origin_model_preds = best_origin_model(features).detach()
 
@@ -61,24 +62,18 @@ def reward_functions(y_preds, best_origin_model, features, labels, device):
     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
 
-    epsilon = 1e-2
-    # reward_without_clk = torch.where(y_preds[without_clk_indexs] >= best_origin_model_preds[without_clk_indexs],
-    #                                  torch.div(punishment, (1 + epsilon - y_preds[without_clk_indexs])),
-    #                                  torch.div(reward, y_preds[without_clk_indexs]))
-    # reward_with_clk = torch.where(y_preds[with_clk_indexs] >= best_origin_model_preds[with_clk_indexs],
-    #                               torch.div(reward, (1 + epsilon - y_preds[with_clk_indexs])),
-    #                               torch.div(punishment, y_preds[with_clk_indexs]))
-    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= 0.5,
+    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= 0.3,
                                      tensor_for_noclk * punishment,
                                      tensor_for_noclk * reward)
-    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= 0.5,
+    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= 0.7,
                                   tensor_for_clk * reward,
                                   tensor_for_clk * punishment)
 
     current_reward[with_clk_indexs] = reward_with_clk
     current_reward[without_clk_indexs] = reward_without_clk
-
+    # print(current_reward[with_clk_indexs], y_preds[with_clk_indexs])
     return current_reward
+
 
 def train(model, best_origin_model, data_loader, device, exploration_rate, ou_noise_obj):
     total_loss = 0

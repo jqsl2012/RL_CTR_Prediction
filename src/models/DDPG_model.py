@@ -23,7 +23,7 @@ class Actor(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        self.bn_input = nn.BatchNorm1d(self.input_dims)
+        # self.bn_input = nn.BatchNorm1d(self.input_dims)
 
         deep_input_dims = self.input_dims
         layers = list()
@@ -38,11 +38,11 @@ class Actor(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
-        input = self.bn_input(self.embedding_layer.forward(input))
+        input = self.embedding_layer.forward(input)
 
         # out = torch.sigmoid(self.mlp(input))
         out = self.mlp(input)
-        return torch.sigmoid(out)
+        return out
 
 
 class Critic(nn.Module):
@@ -51,7 +51,7 @@ class Critic(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        self.bn_input = nn.BatchNorm1d(input_dims)
+        # self.bn_input = nn.BatchNorm1d(input_dims)
 
         deep_input_dims = input_dims + action_nums
         layers = list()
@@ -67,7 +67,7 @@ class Critic(nn.Module):
         self.layer2_mlp = nn.Sequential(*layers)
 
     def forward(self, input, action):
-        input = self.bn_input(self.embedding_layer.forward(input))
+        input = self.embedding_layer.forward(input)
         cat = torch.cat([input, action], dim=1)
 
         q_out = self.layer2_mlp(cat)
@@ -154,18 +154,19 @@ class DDPG():
 
         random_seeds = torch.FloatTensor(np.random.uniform(0, 10, size=[len(state), 1])).to(self.device)
 
-        temp_one = torch.ones(size=[len(state), 1]).to(self.device)
-        temp_zero = torch.zeros(size=[len(state), 1]).to(self.device)
-        random_action = torch.randn(size=(len(action), 1)).to(self.device)
-
-        random_action = torch.where(random_action >= 1, temp_one, random_action)
-        random_action = torch.where(random_action <= 0, temp_zero, random_action)
-
+        # temp_one = torch.ones(size=[len(state), 1]).to(self.device)
+        # temp_zero = torch.zeros(size=[len(state), 1]).to(self.device)
+        random_action = torch.normal(action, exploration_rate)
+        # print(action, random_action)
+        # random_action = torch.where(random_action >= 1, temp_one, random_action)
+        # random_action = torch.where(random_action <= 0, temp_zero, random_action)
+        # print(len((random_action == 1).nonzero()))
         # exploration_rate = max(exploration_rate, 0.1)
         actions = torch.where(random_seeds >= exploration_rate, action,
                               random_action)
-        # print('1', actions)
-        return actions, actions
+        # print('1', actions, '2', torch.sigmoid(actions))
+        # print(len((torch.sigmoid(actions) <= 0.1).nonzero()))
+        return torch.sigmoid(actions), actions
 
     def choose_best_action(self, state):
         # state = self.embedding_layer.forward(state)
@@ -174,7 +175,7 @@ class DDPG():
         with torch.no_grad():
             action = self.Actor.forward(state)
 
-        return action
+        return torch.sigmoid(action)
 
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):
