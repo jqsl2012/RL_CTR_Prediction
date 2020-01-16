@@ -62,10 +62,10 @@ def reward_functions(y_preds, best_origin_model, features, labels, device):
     tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
     tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
 
-    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= 0.3,
+    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= best_origin_model_preds[without_clk_indexs],
                                      tensor_for_noclk * punishment,
                                      tensor_for_noclk * reward)
-    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= 0.7,
+    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= best_origin_model_preds[with_clk_indexs],
                                   tensor_for_clk * reward,
                                   tensor_for_clk * punishment)
 

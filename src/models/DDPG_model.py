@@ -23,7 +23,7 @@ class Actor(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        # self.bn_input = nn.BatchNorm1d(self.input_dims)
+        self.bn_input = nn.BatchNorm1d(self.input_dims)
 
         deep_input_dims = self.input_dims
         layers = list()
@@ -38,7 +38,7 @@ class Actor(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
-        input = self.embedding_layer.forward(input)
+        input = self.bn_input(self.embedding_layer.forward(input))
 
         # out = torch.sigmoid(self.mlp(input))
         out = self.mlp(input)
@@ -51,7 +51,7 @@ class Critic(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        # self.bn_input = nn.BatchNorm1d(input_dims)
+        self.bn_input = nn.BatchNorm1d(input_dims)
 
         deep_input_dims = input_dims + action_nums
         layers = list()
@@ -67,7 +67,7 @@ class Critic(nn.Module):
         self.layer2_mlp = nn.Sequential(*layers)
 
     def forward(self, input, action):
-        input = self.embedding_layer.forward(input)
+        input = self.bn_input(self.embedding_layer.forward(input))
         cat = torch.cat([input, action], dim=1)
 
         q_out = self.layer2_mlp(cat)

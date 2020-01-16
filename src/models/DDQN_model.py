@@ -44,8 +44,7 @@ class Net(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
-        input = self.embedding_layer.forward(input)
-        input = self.bn_input(input)
+        input = self.bn_input(self.embedding_layer.forward(input))
 
         actions_value = self.mlp(input)
 

@@ -40,10 +40,9 @@ class Actor(nn.Module):
     def forward(self, input, ddqn_a):
         input = self.embedding_layer.forward(input)
 
-        input = torch.cat([input, ddqn_a], dim=1)
-        input = self.bn_input(input)
+        obs = self.bn_input(torch.cat([input, ddqn_a], dim=1))
 
-        out = torch.softmax(self.mlp(input), dim=1)
+        out = torch.softmax(self.mlp(obs), dim=1)
 
         return out
 
@@ -54,20 +53,13 @@ class Critic(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        neuron_nums_1 = 512
-        self.fc_s = nn.Linear(input_dims + 1, neuron_nums_1)
-
         self.bn_input = nn.BatchNorm1d(input_dims + 1)
 
-        self.bn_f_s = nn.BatchNorm1d(neuron_nums_1)
-
-        self.bn_s_a = nn.BatchNorm1d(neuron_nums_1 + action_nums)
-
-        deep_input_dims = neuron_nums_1 + action_nums
+        deep_input_dims = input_dims + action_nums + 1
         layers = list()
 
-        neuron_nums_2 = [512, 512]
-        for neuron_num in neuron_nums_2:
+        neuron_nums = [512, 512, 512]
+        for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
@@ -79,13 +71,9 @@ class Critic(nn.Module):
     def forward(self, input, action, ddqn_a):
         input = self.embedding_layer.forward(input)
 
-        input = torch.cat([input, ddqn_a], dim=1)
-        input = self.bn_input(input)
+        obs = self.bn_input(torch.cat([input, ddqn_a], dim=1))
 
-        f_s = F.relu(self.bn_f_s(self.fc_s(input)))
-
-        cat = torch.cat([f_s, action], dim=1)
-        cat = self.bn_s_a(cat)
+        cat = torch.cat([obs, action], dim=1)
 
         q_out = self.layer2_mlp(cat)
 
