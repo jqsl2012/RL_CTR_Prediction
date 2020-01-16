@@ -319,8 +319,8 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
             prob_weights = ddpg_for_pg_model.choose_best_action(features, actions.float())
 
             # x = torch.argsort(prob_weights)[:, 0]
-            # print(len((actions == 2).nonzero()), len((x == 3).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
-            #
+            # print(len((actions == 2).nonzero()), len((x == 3  ).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
+
             # print(len((x == 0).nonzero()), len((x == 1).nonzero()), len((x == 2).nonzero()), len((x == 3).nonzero()), len((x == 4).nonzero()))
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='test')
 
@@ -372,10 +372,10 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     FFM.load_state_dict(FFM_pretain_params)
     FFM.eval()
 
-    # FM = p_model.FM(feature_nums, latent_dims)
-    # FM_pretain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
-    # FM.load_state_dict(FM_pretain_params)
-    # FM.eval()
+    FM = p_model.FM(feature_nums, latent_dims)
+    FM_pretain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
+    FM.load_state_dict(FM_pretain_params)
+    FM.eval()
 
     WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
     WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
@@ -402,11 +402,11 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     DCN.load_state_dict(DCN_pretrain_params)
     DCN.eval()
 
-    model_dict = {0: IPNN.to(device), 1: DeepFM.to(device), 2: FNN.to(device), 3: DCN.to(device), 4: FFM.to(device)}
+    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device)}
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -6) * 2
+    memory_size = round(len(train_data), -6)
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
     loss = nn.BCELoss()
@@ -417,7 +417,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     is_early_stop = False
 
     start_time = datetime.datetime.now()
-    exploration_rate = 1
+    exploration_rate = 10
     for epoch_i in range(epoch):
         torch.cuda.empty_cache() # 清理无用的cuda中间变量缓存
 

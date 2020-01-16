@@ -159,12 +159,12 @@ class DoubleDQN:
         # 清除显存缓存
         torch.cuda.empty_cache()
 
-        self.soft_update(self.target_net, self.eval_net)
+        # self.soft_update(self.target_net, self.eval_net)
         # # 检查是否达到了替换target_net参数的步数
-        # if self.learn_step_counter % self.replace_target_iter == 0:
-        #     self.target_net.load_state_dict(self.eval_net.state_dict())
+        if self.learn_step_counter % self.replace_target_iter == 0:
+             self.target_net.load_state_dict(self.eval_net.state_dict())
         #     # print(('\n目标网络参数已经更新\n'))
-        # self.learn_step_counter += 1
+        self.learn_step_counter += 1
 
         # 训练过程
         # 从memory中随机抽取batch_size的数据

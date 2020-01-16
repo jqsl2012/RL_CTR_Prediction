@@ -104,7 +104,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
     DCN.load_state_dict(DCN_pretrain_params)
     DCN.eval()
 
-    model_dict = {0: DCN.to(device), 1: DeepFM.to(device)}
+    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device)}
 
     submission_path = data_path + dataset_name + campaign_id + 'average_pretrain' + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
