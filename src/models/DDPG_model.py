@@ -42,6 +42,7 @@ class Actor(nn.Module):
 
         # out = torch.sigmoid(self.mlp(input))
         out = self.mlp(input)
+
         return out
 
 
@@ -117,7 +118,7 @@ class DDPG():
         self.Critic_ = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
 
         # 优化器
-        self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A)
+        self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
         self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
@@ -152,7 +153,8 @@ class DDPG():
             action = self.Actor.forward(state)
         self.Actor.train()
 
-        random_seeds = torch.FloatTensor(np.random.uniform(0, 10, size=[len(state), 1])).to(self.device)
+        model_action = torch.sigmoid(action)
+        random_seeds = torch.FloatTensor(np.random.uniform(0, 1, size=[len(state), 1])).to(self.device)
 
         # temp_one = torch.ones(size=[len(state), 1]).to(self.device)
         # temp_zero = torch.zeros(size=[len(state), 1]).to(self.device)
@@ -162,11 +164,13 @@ class DDPG():
         # random_action = torch.where(random_action <= 0, temp_zero, random_action)
         # print(len((random_action == 1).nonzero()))
         # exploration_rate = max(exploration_rate, 0.1)
-        actions = torch.where(random_seeds >= exploration_rate, action,
-                              random_action)
+        ctr_actions = torch.where(random_seeds >= exploration_rate, model_action,
+                              torch.sigmoid(random_action))
+
+        actions = torch.where(random_action >= exploration_rate, action, random_action)
         # print('1', actions, '2', torch.sigmoid(actions))
         # print(len((torch.sigmoid(actions) <= 0.1).nonzero()))
-        return torch.sigmoid(actions), actions
+        return ctr_actions, actions
 
     def choose_best_action(self, state):
         # state = self.embedding_layer.forward(state)

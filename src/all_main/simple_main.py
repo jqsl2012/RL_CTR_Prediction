@@ -170,7 +170,7 @@ def main(data_path, dataset_name, campaign_id, action_nums, latent_dims, model_n
     is_early_stop = False
 
     start_time = datetime.datetime.now()
-    exploration_rate = 10
+    exploration_rate = 1
     for epoch_i in range(epoch):
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
@@ -189,7 +189,7 @@ def main(data_path, dataset_name, campaign_id, action_nums, latent_dims, model_n
               'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.9
+        exploration_rate *= 0.95
 
         # if eva_stopping(valid_aucs, valid_losses, early_stop_type):
         #     early_stop_index = np.mod(epoch_i - 4, 5)
