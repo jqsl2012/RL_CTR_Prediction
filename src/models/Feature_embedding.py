@@ -44,9 +44,9 @@ class Feature_Embedding(nn.Module):
 
     def forward(self, x):
         x_second_embedding = self.feature_embedding(x)
-
         hadamard_product = torch.mul(x_second_embedding[:, self.row], x_second_embedding[:, self.col])
         inner_product = torch.sum(hadamard_product, dim=2)
+        # print(inner_product)
 
         embedding_vectors = torch.cat([inner_product,
                                        x_second_embedding.view(-1, self.field_nums * self.latent_dims)], dim=1)

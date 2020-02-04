@@ -53,24 +53,26 @@ def reward_functions(y_preds, best_origin_model, features, labels, device):
 
     current_reward = torch.ones(size=[len(y_preds), 1]).to(device)
 
-    reward = 1
-    punishment = -1
+    # reward = 100
+    # punishment = -100
 
     with_clk_indexs = (labels == 1).nonzero()[:, 0]
     without_clk_indexs = (labels == 0).nonzero()[:, 0]
 
-    tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
-    tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
+    # tensor_for_noclk = torch.ones(size=[len(without_clk_indexs), 1]).to(device)
+    # tensor_for_clk = torch.ones(size=[len(with_clk_indexs), 1]).to(device)
 
-    reward_without_clk = torch.where(y_preds[without_clk_indexs] >= best_origin_model_preds[without_clk_indexs],
-                                     tensor_for_noclk * punishment,
-                                     tensor_for_noclk * reward)
-    reward_with_clk = torch.where(y_preds[with_clk_indexs] >= best_origin_model_preds[with_clk_indexs],
-                                  tensor_for_clk * reward,
-                                  tensor_for_clk * punishment)
+    reward_without_clk = 0.1 - y_preds[without_clk_indexs]
+    # reward_without_clk = torch.where(y_preds[without_clk_indexs] >= best_origin_model_preds[without_clk_indexs],
+    #                                  tensor_for_noclk * punishment,
+    #                                  tensor_for_noclk * reward)
+    reward_with_clk = y_preds[with_clk_indexs] - 0.9
+    # reward_with_clk = torch.where(y_preds[with_clk_indexs] >= best_origin_model_preds[with_clk_indexs],
+    #                               tensor_for_clk * reward,
+    #                               tensor_for_clk * punishment)
 
-    current_reward[with_clk_indexs] = reward_with_clk
-    current_reward[without_clk_indexs] = reward_without_clk
+    current_reward[with_clk_indexs] = reward_with_clk * 10
+    current_reward[without_clk_indexs] = reward_without_clk * 10
     # print(current_reward[with_clk_indexs], y_preds[with_clk_indexs])
     return current_reward
 
@@ -119,7 +121,7 @@ def test(model, data_loader, loss, device):
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             y = model.choose_best_action(features)
-
+            # print(y)
             test_loss = loss(y, labels.float())
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
@@ -151,18 +153,18 @@ def main(data_path, dataset_name, campaign_id, action_nums, latent_dims, model_n
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8)
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=0, shuffle=1)
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=0)
 
     memory_size = round(len(train_data), -6)
     model = get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
     loss = nn.BCELoss()
 
-    DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
-    DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
-    DeepFM.load_state_dict(DeepFM_pretrain_params)
-    DeepFM.eval()
-    DeepFM.to(device)
+    FM = p_model.FM(feature_nums, latent_dims)
+    FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
+    FM.load_state_dict(FM_pretrain_params)
+    FM.eval()
+    FM.to(device)
 
     valid_aucs = []
     valid_losses = []
@@ -170,13 +172,13 @@ def main(data_path, dataset_name, campaign_id, action_nums, latent_dims, model_n
     is_early_stop = False
 
     start_time = datetime.datetime.now()
-    exploration_rate = 1
+    exploration_rate = 1e-1
     for epoch_i in range(epoch):
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss, train_rewards, train_auc = train(model, DeepFM, train_data_loader, device, exploration_rate, ou_noise_obj)
+        train_average_loss, train_rewards, train_auc = train(model, FM, train_data_loader, device, exploration_rate, ou_noise_obj)
 
         # torch.save(model.Actor.state_dict(), save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
@@ -189,7 +191,7 @@ def main(data_path, dataset_name, campaign_id, action_nums, latent_dims, model_n
               'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.95
+        exploration_rate /= 1.01
 
         # if eva_stopping(valid_aucs, valid_losses, early_stop_type):
         #     early_stop_index = np.mod(epoch_i - 4, 5)

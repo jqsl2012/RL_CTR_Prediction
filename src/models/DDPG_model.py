@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+import copy
 
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -27,18 +28,26 @@ class Actor(nn.Module):
 
         deep_input_dims = self.input_dims
         layers = list()
-        neuron_nums = [512, 512, 512]
+        neuron_nums = [256, 256, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
+
         layers.append(nn.Linear(deep_input_dims, action_nums))
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
 
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
+        # print(self.embedding_layer.forward(input))
         input = self.bn_input(self.embedding_layer.forward(input))
+        # input = self.embedding_layer.forward(input)
 
         # out = torch.sigmoid(self.mlp(input))
         out = self.mlp(input)
@@ -62,13 +71,20 @@ class Critic(nn.Module):
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
+            # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
+
         layers.append(nn.Linear(deep_input_dims, action_nums))
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
 
         self.layer2_mlp = nn.Sequential(*layers)
 
     def forward(self, input, action):
         input = self.bn_input(self.embedding_layer.forward(input))
+        # input = self.embedding_layer.forward(input)
         cat = torch.cat([input, action], dim=1)
 
         q_out = self.layer2_mlp(cat)
@@ -118,8 +134,8 @@ class DDPG():
         self.Critic_ = Critic(self.input_dims, self.action_nums, self.feature_nums, self.field_nums, self.latent_dims).to(self.device)
 
         # 优化器
-        self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
-        self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer_a = torch.optim.Adam(self.Actor.parameters(), lr=self.lr_A, weight_decay=1e-3)
+        self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-3)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
@@ -144,33 +160,55 @@ class DDPG():
 
         self.memory_counter += transition_lens
 
+    # def choose_action(self, state, exploration_rate):
+    #
+    #     # state = self.embedding_layer.forward(state)
+    #
+    #     self.Actor.eval()
+    #     with torch.no_grad():
+    #         action = self.Actor.forward(state)
+    #     self.Actor.train()
+    #     # print(action)
+    #     model_action = torch.sigmoid(action)
+    #     random_seeds = torch.FloatTensor(np.random.uniform(0, 10, size=[len(state), 1])).to(self.device)
+    #
+    #     # temp_one = torch.ones(size=[len(state), 1]).to(self.device)
+    #     # temp_zero = torch.zeros(size=[len(state), 1]).to(self.device)
+    #     random_action = torch.normal(action, exploration_rate)
+    #     # print('2', random_action)
+    #     # print(action, random_action)
+    #     # random_action = torch.where(random_action >= 1, temp_one, random_action)
+    #     # random_action = torch.where(random_action <= 0, temp_zero, random_action)
+    #     # print(len((random_action == 1).nonzero()))
+    #     # exploration_rate = max(exploration_rate, 0.1)
+    #     ctr_actions = torch.where(random_seeds >= exploration_rate, model_action,
+    #                           torch.sigmoid(random_action))
+    #
+    #     actions = torch.where(random_seeds >= exploration_rate, action, random_action)
+    #     # print('1', ctr_actions, '2', actions)
+    #     # print(len((ctr_actions <= 0.5).nonzero()))
+    #     return ctr_actions, actions
+
+    def paramter_noise(self, new_actor, exploration_rate):
+        new_actor.bn_input.weight.data += torch.normal(0, exploration_rate, size=new_actor.bn_input.weight.data.size()).to(self.device)
+        for i, layer in enumerate(new_actor.mlp):
+            if i % 3 == 0 or (i - 1) % 3 == 0:
+                layer.weight.data += torch.normal(0, exploration_rate, size=layer.weight.data.size()).to(self.device)
+
+        return new_actor
+
     def choose_action(self, state, exploration_rate):
-
         # state = self.embedding_layer.forward(state)
-
-        self.Actor.eval()
+        new_actor = self.paramter_noise(copy.deepcopy(self.Actor), exploration_rate)
+        # print(self.Actor.mlp[0].weight.data)
+        new_actor.eval()
         with torch.no_grad():
-            action = self.Actor.forward(state)
-        self.Actor.train()
-
+            action = new_actor.forward(state)
         model_action = torch.sigmoid(action)
-        random_seeds = torch.FloatTensor(np.random.uniform(0, 1, size=[len(state), 1])).to(self.device)
 
-        # temp_one = torch.ones(size=[len(state), 1]).to(self.device)
-        # temp_zero = torch.zeros(size=[len(state), 1]).to(self.device)
-        random_action = torch.normal(action, exploration_rate)
-        # print(action, random_action)
-        # random_action = torch.where(random_action >= 1, temp_one, random_action)
-        # random_action = torch.where(random_action <= 0, temp_zero, random_action)
-        # print(len((random_action == 1).nonzero()))
-        # exploration_rate = max(exploration_rate, 0.1)
-        ctr_actions = torch.where(random_seeds >= exploration_rate, model_action,
-                              torch.sigmoid(random_action))
+        del new_actor
 
-        actions = torch.where(random_action >= exploration_rate, action, random_action)
-        # print('1', actions, '2', torch.sigmoid(actions))
-        # print(len((torch.sigmoid(actions) <= 0.1).nonzero()))
-        return ctr_actions, actions
+        return model_action, action
 
     def choose_best_action(self, state):
         # state = self.embedding_layer.forward(state)
