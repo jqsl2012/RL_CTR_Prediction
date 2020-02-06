@@ -199,7 +199,7 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
     for i in choose_model_lens: # 根据ddqn_model的action,判断要选择ensemble的数量
         with_action_indexs = (actions == i).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i]
-        current_basic_rewards = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+        current_basic_rewards = torch.ones(size=[len(with_action_indexs), 1]).to(device) * 1000
         current_prob_weights = prob_weights[with_action_indexs]
 
         current_with_clk_indexs = (labels[with_action_indexs] == 1).nonzero()[:, 0]
@@ -219,15 +219,15 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 100,
-                current_basic_rewards[current_with_clk_indexs] * -100
+                current_basic_rewards[current_with_clk_indexs] * 1,
+                current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                     current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 100,
-                current_basic_rewards[current_without_clk_indexs] * -100
+                current_basic_rewards[current_without_clk_indexs] * 1,
+                current_basic_rewards[current_without_clk_indexs] * -1
             )
         else:
             current_softmax_weights = torch.softmax(
@@ -252,14 +252,14 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_row_preds[current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 100,
-                current_basic_rewards[current_with_clk_indexs] * -100
+                current_basic_rewards[current_with_clk_indexs] * 1,
+                current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 100,
-                current_basic_rewards[current_without_clk_indexs] * -100
+                current_basic_rewards[current_without_clk_indexs] * 1,
+                current_basic_rewards[current_without_clk_indexs] * -1
             )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards

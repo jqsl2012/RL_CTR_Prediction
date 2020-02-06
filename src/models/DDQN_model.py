@@ -43,7 +43,7 @@ class Net(nn.Module):
 
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.normal_(layer.weight)
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
 

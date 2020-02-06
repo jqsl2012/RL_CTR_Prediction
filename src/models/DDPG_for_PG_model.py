@@ -38,7 +38,7 @@ class Actor(nn.Module):
 
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight)
+                nn.init.normal_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -74,7 +74,7 @@ class Critic(nn.Module):
 
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight)
+                nn.init.normal_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -235,16 +235,14 @@ class DDPG():
         return b_s, b_a, b_r, b_s_, batch_memory_ddqn_actions
 
     def learn_c(self, b_s, b_a, b_r, b_s_, b_ddqn_a):
-        print(b_a, b_r)
         q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_, b_ddqn_a), b_ddqn_a).detach()
         q = self.Critic.forward(b_s, b_a, b_ddqn_a)
 
         td_error = self.loss_func(q, q_target)
-        print(self.Critic.mlp[0].weight.data)
+
         self.optimizer_c.zero_grad()
         td_error.backward()
         self.optimizer_c.step()
-        print(self.Critic.mlp[0].weight.data)
 
         td_error_r = td_error.item()
 
