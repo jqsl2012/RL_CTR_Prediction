@@ -77,7 +77,7 @@ class Critic(nn.Module):
                 nn.init.xavier_normal_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
-        self.layer2_mlp = nn.Sequential(*layers)
+        self.mlp = nn.Sequential(*layers)
 
     def forward(self, input, action, ddqn_a):
         input = self.embedding_layer.forward(input)
@@ -86,7 +86,7 @@ class Critic(nn.Module):
 
         cat = torch.cat([obs, action], dim=1)
 
-        q_out = self.layer2_mlp(cat)
+        q_out = self.mlp(cat)
 
         return q_out
 
@@ -240,10 +240,11 @@ class DDPG():
         q = self.Critic.forward(b_s, b_a, b_ddqn_a)
 
         td_error = self.loss_func(q, q_target)
-
+        print(self.Critic.mlp[0].weight.data)
         self.optimizer_c.zero_grad()
         td_error.backward()
         self.optimizer_c.step()
+        print(self.Critic.mlp[0].weight.data)
 
         td_error_r = td_error.item()
 

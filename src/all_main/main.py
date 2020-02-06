@@ -252,14 +252,14 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_row_preds[current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 10,
-                current_basic_rewards[current_with_clk_indexs] * -10
+                current_basic_rewards[current_with_clk_indexs] * 100,
+                current_basic_rewards[current_with_clk_indexs] * -100
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 10,
-                current_basic_rewards[current_without_clk_indexs] * -10
+                current_basic_rewards[current_without_clk_indexs] * 100,
+                current_basic_rewards[current_without_clk_indexs] * -100
             )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
