@@ -178,7 +178,8 @@ def get_dataset(datapath, dataset_name, campaign_id):
 #
 #     return y_preds, prob_weights.to(device), rewards
 
-def generate_preds(model_dict, features, actions, prob_weights, labels, device, mode):
+def generate_preds(model_dict, features, actions, prob_weights, prob_actions,
+                   labels, device, mode):
     y_preds = torch.ones(size=[len(features), 1]).to(device)
     rewards = torch.ones(size=[len(features), 1]).to(device)
 
@@ -186,10 +187,12 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
         prob_weights = torch.softmax(prob_weights, dim=1)
 
     sort_prob_weights, sortindex_prob_weights = torch.sort(-prob_weights, dim=1)
+    sort_prob_actions, sortindex_prob_actions = torch.sort(-prob_actions, dim=1)
 
     pretrain_model_len = len(model_dict) # 有多少个预训练模型
 
     return_prob_weights = torch.zeros(size=[len(features), pretrain_model_len]).to(device)
+    return_prob_actions = torch.zeros(size=[len(features), pretrain_model_len]).to(device)
 
     pretrain_y_preds = {}
     for i in range(pretrain_model_len):
@@ -201,6 +204,7 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i]
         current_basic_rewards = torch.ones(size=[len(with_action_indexs), 1]).to(device) * 1000
         current_prob_weights = prob_weights[with_action_indexs]
+        current_prob_actions = prob_actions[with_action_indexs]
 
         current_with_clk_indexs = (labels[with_action_indexs] == 1).nonzero()[:, 0]
         current_without_clk_indexs = (labels[with_action_indexs] == 0).nonzero()[:, 0]
@@ -215,6 +219,7 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             y_preds[with_action_indexs, :] = current_y_preds
 
             return_prob_weights[with_action_indexs] = current_prob_weights
+            return_prob_actions[with_action_indexs] = current_prob_actions
 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
@@ -234,8 +239,11 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
                 sort_prob_weights[with_action_indexs][:, :i] * -1, dim=1
             ).to(device)  # 再进行softmax
 
+            current_temp_prob_actions = sort_prob_actions[with_action_indexs][:, :i] * -1
+
             for k in range(i):
                 return_prob_weights[with_action_indexs, current_choose_models[:, k]] = current_softmax_weights[:, k]
+                return_prob_actions[with_action_indexs, current_choose_models[:, k]] = current_temp_prob_actions[:, k]
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
 
@@ -285,7 +293,7 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
         #         current_without_clk_indexs].mean(dim=1).view(-1, 1)
         # )
 
-    return y_preds, return_prob_weights, rewards
+    return y_preds, return_prob_weights, return_prob_actions, rewards
 
 
 def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
@@ -299,16 +307,16 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, 
 
         actions = ddqn_model.choose_action(features, exploration_rate)
 
-        prob_weights = ddpg_for_pg_model.choose_action(features, actions.float(), exploration_rate)
+        prob_actions, prob_weights = ddpg_for_pg_model.choose_action(features, actions.float(), exploration_rate)
 
-        y_preds, prob_weights_new, rewards = \
-            generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='train')
+        y_preds, prob_weights_new, prob_actions_new, rewards = \
+            generate_preds(model_dict, features, actions, prob_weights, prob_actions, labels, device, mode='train')
 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
         ddqn_model.store_transition(torch.cat([features, actions, rewards.long()], dim=1))
-        action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
+        action_rewards = torch.cat([prob_actions_new, rewards], dim=1)
         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
         ddqn_model.learn()
 
