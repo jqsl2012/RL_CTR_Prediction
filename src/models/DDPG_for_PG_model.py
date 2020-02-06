@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+import copy
 
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -24,6 +25,7 @@ class Actor(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
+        nn.init.normal_(self.bn_input.weight)
 
         deep_input_dims = self.input_dims + 1
         layers = list()
@@ -33,6 +35,10 @@ class Actor(nn.Module):
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -54,6 +60,7 @@ class Critic(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(input_dims + 1)
+        nn.init.normal_(self.bn_input.weight)
 
         deep_input_dims = input_dims + action_nums + 1
         layers = list()
@@ -64,6 +71,10 @@ class Critic(nn.Module):
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.layer2_mlp = nn.Sequential(*layers)
@@ -92,7 +103,7 @@ class DDPG():
             reward_decay=1,
             memory_size=4096000,
             batch_size=256,
-            tau=0.001, # for target network soft update
+            tau=0.005, # for target network soft update
             device='cuda:0',
     ):
         self.feature_nums = feature_nums
@@ -152,6 +163,25 @@ class DDPG():
 
         self.memory_counter += transition_lens
 
+    # def paramter_noise(self, new_actor, exploration_rate):
+    #     new_actor.bn_input.weight.data += torch.normal(0, exploration_rate, size=new_actor.bn_input.weight.data.size()).to(self.device)
+    #     for i, layer in enumerate(new_actor.mlp):
+    #         if i % 3 == 0 or (i - 1) % 3 == 0:
+    #             layer.weight.data += torch.normal(0, exploration_rate, size=layer.weight.data.size()).to(self.device)
+    #
+    #     return new_actor
+    #
+    # def choose_action(self, state, ddqn_a, exploration_rate):
+    #
+    #     # state = self.embedding_layer.forward(state)
+    #     new_actor = self.paramter_noise(copy.deepcopy(self.Actor), exploration_rate)
+    #
+    #     new_actor.eval()
+    #     with torch.no_grad():
+    #         action = new_actor.forward(state, ddqn_a)
+    #     # print(action)
+    #     return action
+
     def choose_action(self, state, ddqn_a, exploration_rate):
 
         # state = self.embedding_layer.forward(state)
@@ -163,7 +193,7 @@ class DDPG():
 
         random_seeds = torch.rand(len(state), 1).to(self.device)
 
-        random_action = torch.softmax(torch.abs(torch.normal(action, exploration_rate)), dim=1)
+        random_action = torch.softmax(torch.normal(action, exploration_rate), dim=1)
 
         # exploration_rate = max(exploration_rate, 0.1)
         actions = torch.where(random_seeds >= exploration_rate, action,
@@ -205,6 +235,7 @@ class DDPG():
         return b_s, b_a, b_r, b_s_, batch_memory_ddqn_actions
 
     def learn_c(self, b_s, b_a, b_r, b_s_, b_ddqn_a):
+        print(b_a, b_r)
         q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Actor_.forward(b_s_, b_ddqn_a), b_ddqn_a).detach()
         q = self.Critic.forward(b_s, b_a, b_ddqn_a)
 

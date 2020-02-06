@@ -68,7 +68,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
-
+    
+    LR = p_model.LR(feature_nums)
+    LR_pretain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    LR.load_state_dict(LR_pretain_params)
+    LR.eval()
+    
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
     FFM_pretain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
     FFM.load_state_dict(FFM_pretain_params)
@@ -99,13 +104,23 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
     IPNN.load_state_dict(IPNN_pretrain_params)
     IPNN.eval()
 
+    OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
+    OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
+    OPNN.load_state_dict(OPNN_pretrain_params)
+    OPNN.eval()
+
     DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
     DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
     DCN.load_state_dict(DCN_pretrain_params)
     DCN.eval()
 
-    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device)}
+    AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
+    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    AFM.load_state_dict(AFM_pretrain_params)
+    AFM.eval()
 
+    # model_dict = {0: FM.to(device), 1: AFM.to(device), 2: DeepFM.to(device), 3: DCN.to(device), 4: OPNN.to(device)}
+    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device)}
     submission_path = data_path + dataset_name + campaign_id + 'average_pretrain' + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)

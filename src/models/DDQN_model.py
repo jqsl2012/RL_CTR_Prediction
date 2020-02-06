@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from src.models.Feature_embedding import Feature_Embedding
-
+import copy
 import datetime
 
 np.seterr(all='raise')
@@ -30,6 +30,7 @@ class Net(nn.Module):
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
+        nn.init.normal_(self.bn_input.weight)
 
         deep_input_dims = self.input_dims
         layers = list()
@@ -39,6 +40,11 @@ class Net(nn.Module):
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
             deep_input_dims = neuron_num
+
+        for i, layer in enumerate(layers):
+            if i % 3 == 0:
+                nn.init.xavier_normal_(layer.weight.data)
+
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -118,6 +124,27 @@ class DoubleDQN:
 
         self.memory_counter += transition_lens
 
+    # def paramter_noise(self, new_eval_net, exploration_rate):
+    #     new_eval_net.bn_input.weight.data += torch.normal(0, exploration_rate, size=new_eval_net.bn_input.weight.data.size()).to(self.device)
+    #     for i, layer in enumerate(new_eval_net.mlp):
+    #         if i % 3 == 0 or (i - 1) % 3 == 0:
+    #             layer.weight.data += torch.normal(0, exploration_rate, size=layer.weight.data.size()).to(self.device)
+    #
+    #     return new_eval_net
+    # def choose_action(self, states, exploration_rate):
+    #     torch.cuda.empty_cache()
+    #
+    #     # states = self.embedding_layer.forward(states)
+    #     new_eval_net = self.paramter_noise(copy.deepcopy(self.eval_net), exploration_rate)
+    #
+    #     new_eval_net.eval()
+    #     with torch.no_grad():
+    #         action_values = new_eval_net.forward(states)
+    #
+    #     max_action = torch.argsort(-action_values)[:, 0] + 2
+    #
+    #     # 用矩阵来初始
+    #     return max_action.view(-1, 1)
     # 选择动作
     def choose_action(self, states, exploration_rate):
         torch.cuda.empty_cache()
