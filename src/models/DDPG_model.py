@@ -25,6 +25,7 @@ class Actor(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
+        nn.init.xavier_uniform_(self.bn_input.weight)
 
         deep_input_dims = self.input_dims
         layers = list()
@@ -40,7 +41,7 @@ class Actor(nn.Module):
 
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.xavier_uniform_(layer.weight.data)
 
         self.mlp = nn.Sequential(*layers)
 
@@ -62,6 +63,7 @@ class Critic(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(input_dims)
+        nn.init.xavier_uniform_(self.bn_input.weight)
 
         deep_input_dims = input_dims + action_nums
         layers = list()
@@ -78,7 +80,7 @@ class Critic(nn.Module):
 
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.xavier_uniform_(layer.weight)
 
         self.layer2_mlp = nn.Sequential(*layers)
 
