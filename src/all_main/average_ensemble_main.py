@@ -120,7 +120,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
     AFM.eval()
 
     # model_dict = {0: FM.to(device), 1: AFM.to(device), 2: DeepFM.to(device), 3: DCN.to(device), 4: OPNN.to(device)}
-    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device)}
+    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device), 3: OPNN.to(device), 4: AFM.to(device)}
     submission_path = data_path + dataset_name + campaign_id + 'average_pretrain' + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)

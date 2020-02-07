@@ -208,7 +208,7 @@ class DDPG():
         with torch.no_grad():
             action = self.Actor.forward(state, ddqn_a)
 
-        return action
+        return action, torch.softmax(action, dim=1)
 
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):

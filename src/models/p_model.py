@@ -130,11 +130,12 @@ class WideAndDeep(nn.Module):
             # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
+        layers.append(nn.Linear(deep_input_dims, 1))
+
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.normal_(layer.weight)
 
-        layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -172,12 +173,14 @@ class InnerPNN(nn.Module):
             # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
-        for i, layer in enumerate(layers):
-            if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
-
         layers.append(nn.Linear(deep_input_dims, 1))
+
         self.mlp = nn.Sequential(*layers)
+
+        self.row, self.col = list(), list()
+        for i in range(self.field_nums - 1):
+            for j in range(i + 1, self.field_nums):
+                self.row.append(i), self.col.append(j)
 
     def forward(self, x):
         """
@@ -186,11 +189,7 @@ class InnerPNN(nn.Module):
         """
         embedding_x = self.feature_embedding(x)
 
-        inner_product_vectors = torch.FloatTensor().cuda()
-        for i in range(self.field_nums - 1):
-            for j in range(i + 1, self.field_nums):
-                inner_product = torch.sum(torch.mul(embedding_x[:, i], embedding_x[:, j]), dim=1).view(-1, 1)
-                inner_product_vectors = torch.cat([inner_product_vectors, inner_product], dim=1)
+        inner_product_vectors = torch.sum(torch.mul(embedding_x[:, self.row], embedding_x[:, self.col]), dim=2)
 
         # 內积之和
         cross_term = inner_product_vectors
@@ -225,16 +224,17 @@ class OuterPNN(nn.Module):
             # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
+        layers.append(nn.Linear(deep_input_dims, 1))
+
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.normal_(layer.weight)
 
-        layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
 
         # kernel指的对外积的转换
         self.kernel = nn.Parameter(torch.ones((self.latent_dims, self.latent_dims)))
-        nn.init.xavier_normal_(self.kernel.data)
+        nn.init.normal_(self.kernel)
 
     def forward(self, x):
         """
@@ -284,11 +284,12 @@ class DeepFM(nn.Module):
             # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
+        layers.append(nn.Linear(deep_input_dims, 1))
+
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.normal_(layer.weight)
 
-        layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers) #   7141262125646409
 
 
@@ -345,11 +346,12 @@ class FNN(nn.Module):
             # layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
+        layers.append(nn.Linear(deep_input_dims, 1))
+
         for i, layer in enumerate(layers):
             if i % 3 == 0:
-                nn.init.xavier_normal_(layer.weight.data)
+                nn.init.normal_(layer.weight)
 
-        layers.append(nn.Linear(deep_input_dims, 1))
         self.mlp = nn.Sequential(*layers)
 
     def load_embedding(self, pretrain_params):
@@ -408,14 +410,14 @@ class DCN(nn.Module):
             nn.Linear(cross_input_dims, output_dim, bias=False) for _ in range(self.num_neural_layers)
         ])
         for cross_w in self.cross_net_w:
-            nn.init.xavier_normal_(cross_w.weight.data)
+            nn.init.normal_(cross_w.weight)
 
         self.cross_net_b = nn.ParameterList([
             nn.Parameter(torch.zeros((cross_input_dims,))) for _ in range(self.num_neural_layers)
         ])
 
         self.linear = nn.Linear(neural_nums[-1] + self.field_nums * self.latent_dims, output_dim)
-        nn.init.xavier_normal_(self.linear.weight.data)
+        nn.init.normal_(self.linear.weight)
 
     def forward(self, x):
         embedding_x = self.feature_embedding(x).view(-1, self.field_nums * self.latent_dims)
@@ -453,16 +455,16 @@ class AFM(nn.Module):
         attention_factor = self.latent_dims
 
         self.attention_net = nn.Linear(self.latent_dims, attention_factor) # 隐层神经元数量可以变化,不一定为输入的长度
-        nn.init.xavier_normal_(self.attention_net.weight.data)
+        nn.init.normal_(self.attention_net.weight)
 
         self.attention_softmax = nn.Linear(attention_factor, 1)
-        nn.init.xavier_normal_(self.attention_softmax.weight.data)
+        nn.init.normal_(self.attention_softmax.weight)
 
         self.fc = nn.Linear(self.latent_dims, output_dim)
-        nn.init.xavier_normal_(self.fc.weight.data)
+        nn.init.normal_(self.fc.weight)
 
         self.linear = nn.Embedding(self.feature_nums, output_dim)
-        nn.init.xavier_normal_(self.linear.weight.data)
+        nn.init.normal_(self.linear.weight)
         self.bias = nn.Parameter(torch.zeros((output_dim,)))
 
     def forward(self, x):
