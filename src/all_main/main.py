@@ -29,10 +29,10 @@ def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, me
 
     ddqn_model = Model.DoubleDQN(feature_nums, field_nums, latent_dims,
                                     campaign_id=campaign_id, action_nums=action_nums, memory_size=memory_size,
-                                 batch_size=batch_size // 16, device=device)
+                                 batch_size=batch_size, device=device)
     ddpg_for_pg_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
-                                               campaign_id=campaign_id, batch_size=batch_size // 16,
+                                               campaign_id=campaign_id, batch_size=batch_size,
                                                memory_size=memory_size, device=device)
     return ddqn_model, ddpg_for_pg_Model
 
@@ -373,7 +373,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8, shuffle=1) # 0.7153541503790021
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8) # 0.7153541503790021
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
@@ -526,7 +526,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=1024)
+    parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
