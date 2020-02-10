@@ -35,7 +35,7 @@ class Feature_Embedding(nn.Module):
         self.latent_dims = latent_dims
 
         self.feature_embedding = nn.Embedding(feature_numbers, latent_dims)
-        nn.init.xavier_uniform_(self.feature_embedding.weight)
+        # nn.init.xavier_uniform_(self.feature_embedding.weight)
 
         self.row, self.col = list(), list()
         for i in range(self.field_nums - 1):

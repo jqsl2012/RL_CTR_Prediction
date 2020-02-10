@@ -373,7 +373,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8, shuffle=1)
+    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8, shuffle=1) # 0.7153541503790021
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
@@ -421,11 +421,11 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     DCN.load_state_dict(DCN_pretrain_params)
     DCN.eval()
 
-    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device), 3: OPNN.to(device), 4: AFM.to(device)}
+    model_dict = {0: FM.to(device), 1: FFM.to(device), 2: WandD.to(device), 3: IPNN.to(device), 4: DCN.to(device)}
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -6)
+    memory_size = 1000000
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
     loss = nn.BCELoss()
@@ -521,7 +521,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='PG_DDPG', help='LR, FM, FFM, W&D')
-    parser.add_argument('--latent_dims', default=8)
+    parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)

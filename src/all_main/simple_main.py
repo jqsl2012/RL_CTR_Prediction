@@ -88,7 +88,7 @@ def train(model, best_origin_model, data_loader, device, exploration_rate, ou_no
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).float().to(device)
         # ou_noise = torch.FloatTensor(ou_noise_obj()[: len(features)]).unsqueeze(1).to(device)
 
-        y_preds, actions = model.choose_action(features, exploration_rate) # ctrs
+        y_preds, actions = model.choose_action(features, labels, exploration_rate) # ctrs
 
         rewards = reward_functions(y_preds, best_origin_model, features, labels, device)
 

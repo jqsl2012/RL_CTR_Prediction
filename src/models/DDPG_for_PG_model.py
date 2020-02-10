@@ -25,20 +25,20 @@ class Actor(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
-        nn.init.xavier_uniform_(self.bn_input.weight)
+        # nn.init.xavier_uniform_(self.bn_input.weight)
 
         deep_input_dims = self.input_dims + 1
         layers = list()
-        neuron_nums = [512, 512, 512]
+        neuron_nums = [300, 300, 300]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
             deep_input_dims = neuron_num
 
-        for i, layer in enumerate(layers):
-            if i % 3 == 0:
-                nn.init.xavier_uniform_(layer.weight)
+        # for i, layer in enumerate(layers):
+        #     if i % 3 == 0:
+        #         nn.init.xavier_uniform_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -60,21 +60,20 @@ class Critic(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(input_dims + 1)
-        nn.init.xavier_uniform_(self.bn_input.weight)
-
+        # nn.init.xavier_uniform_(self.bn_input.weight)
         deep_input_dims = input_dims + action_nums + 1
         layers = list()
 
-        neuron_nums = [512, 512, 512]
+        neuron_nums = [300, 300, 300]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
             deep_input_dims = neuron_num
 
-        for i, layer in enumerate(layers):
-            if i % 3 == 0:
-                nn.init.xavier_uniform_(layer.weight)
+        # for i, layer in enumerate(layers):
+        #     if i % 3 == 0:
+        #         nn.init.xavier_uniform_(layer.weight)
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
         self.mlp = nn.Sequential(*layers)
@@ -83,7 +82,6 @@ class Critic(nn.Module):
         input = self.embedding_layer.forward(input)
 
         obs = self.bn_input(torch.cat([input, ddqn_a], dim=1))
-
         cat = torch.cat([obs, action], dim=1)
 
         q_out = self.mlp(cat)

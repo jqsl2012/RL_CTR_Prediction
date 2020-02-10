@@ -30,20 +30,20 @@ class Net(nn.Module):
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
-        nn.init.xavier_uniform_(self.bn_input.weight)
+        # nn.init.uniform_(self.bn_input,)
 
         deep_input_dims = self.input_dims
         layers = list()
-        neuron_nums = [512, 512, 512]
+        neuron_nums = [300, 300, 300]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
             deep_input_dims = neuron_num
-
-        for i, layer in enumerate(layers):
-            if i % 3 == 0:
-                nn.init.xavier_uniform_(layer.weight)
+        #
+        # for i, layer in enumerate(layers):
+        #     if i % 3 == 0:
+        #         nn.init.xavier_uniform_(layer.weight)
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
 

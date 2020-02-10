@@ -120,7 +120,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
     AFM.eval()
 
     # model_dict = {0: FM.to(device), 1: AFM.to(device), 2: DeepFM.to(device), 3: DCN.to(device), 4: OPNN.to(device)}
-    model_dict = {0: FFM.to(device), 1: DCN.to(device), 2: DeepFM.to(device), 3: OPNN.to(device), 4: AFM.to(device)}
+    model_dict = {0: FM.to(device), 1: FFM.to(device), 2: WandD.to(device), 3: IPNN.to(device), 4: DCN.to(device)}
     submission_path = data_path + dataset_name + campaign_id + 'average_pretrain' + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
         os.mkdir(submission_path)
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--latent_dims', default=8)
+    parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')

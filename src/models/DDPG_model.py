@@ -25,7 +25,7 @@ class Actor(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
-        nn.init.xavier_uniform_(self.bn_input.weight)
+        # nn.init.xavier_uniform_(self.bn_input.weight)
 
         deep_input_dims = self.input_dims
         layers = list()
@@ -39,9 +39,9 @@ class Actor(nn.Module):
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
-        for i, layer in enumerate(layers):
-            if i % 3 == 0:
-                nn.init.xavier_uniform_(layer.weight.data)
+        # for i, layer in enumerate(layers):
+        #     if i % 3 == 0:
+        #         nn.init.xavier_uniform_(layer.weight.data)
 
         self.mlp = nn.Sequential(*layers)
 
@@ -63,7 +63,7 @@ class Critic(nn.Module):
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
         self.bn_input = nn.BatchNorm1d(input_dims)
-        nn.init.xavier_uniform_(self.bn_input.weight)
+        # nn.init.xavier_uniform_(self.bn_input.weight)
 
         deep_input_dims = input_dims + action_nums
         layers = list()
@@ -78,9 +78,9 @@ class Critic(nn.Module):
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
 
-        for i, layer in enumerate(layers):
-            if i % 3 == 0:
-                nn.init.xavier_uniform_(layer.weight)
+        # for i, layer in enumerate(layers):
+        #     if i % 3 == 0:
+        #         nn.init.xavier_uniform_(layer.weight)
 
         self.layer2_mlp = nn.Sequential(*layers)
 
@@ -162,55 +162,54 @@ class DDPG():
 
         self.memory_counter += transition_lens
 
-    # def choose_action(self, state, exploration_rate):
-    #
-    #     # state = self.embedding_layer.forward(state)
-    #
-    #     self.Actor.eval()
-    #     with torch.no_grad():
-    #         action = self.Actor.forward(state)
-    #     self.Actor.train()
-    #     # print(action)
-    #     model_action = torch.sigmoid(action)
-    #     random_seeds = torch.FloatTensor(np.random.uniform(0, 10, size=[len(state), 1])).to(self.device)
-    #
-    #     # temp_one = torch.ones(size=[len(state), 1]).to(self.device)
-    #     # temp_zero = torch.zeros(size=[len(state), 1]).to(self.device)
-    #     random_action = torch.normal(action, exploration_rate)
-    #     # print('2', random_action)
-    #     # print(action, random_action)
-    #     # random_action = torch.where(random_action >= 1, temp_one, random_action)
-    #     # random_action = torch.where(random_action <= 0, temp_zero, random_action)
-    #     # print(len((random_action == 1).nonzero()))
-    #     # exploration_rate = max(exploration_rate, 0.1)
-    #     ctr_actions = torch.where(random_seeds >= exploration_rate, model_action,
-    #                           torch.sigmoid(random_action))
-    #
-    #     actions = torch.where(random_seeds >= exploration_rate, action, random_action)
-    #     # print('1', ctr_actions, '2', actions)
-    #     # print(len((ctr_actions <= 0.5).nonzero()))
-    #     return ctr_actions, actions
+    def choose_action(self, state, labels, exploration_rate):
 
-    def paramter_noise(self, new_actor, exploration_rate):
-        new_actor.bn_input.weight.data += torch.normal(0, exploration_rate, size=new_actor.bn_input.weight.data.size()).to(self.device)
-        for i, layer in enumerate(new_actor.mlp):
-            if i % 3 == 0 or (i - 1) % 3 == 0:
-                layer.weight.data += torch.normal(0, exploration_rate, size=layer.weight.data.size()).to(self.device)
+        with_clk_indexs = (labels == 1).nonzero()[:, 0]
+        without_clk_indexs = (labels == 0).nonzero()[:, 0]
 
-        return new_actor
-
-    def choose_action(self, state, exploration_rate):
         # state = self.embedding_layer.forward(state)
-        new_actor = self.paramter_noise(copy.deepcopy(self.Actor), exploration_rate)
-        # print(self.Actor.mlp[0].weight.data)
-        new_actor.eval()
+
+        self.Actor.eval()
         with torch.no_grad():
-            action = new_actor.forward(state)
+            action = self.Actor.forward(state)
+        self.Actor.train()
+
         model_action = torch.sigmoid(action)
+        random_seeds = torch.FloatTensor(np.random.uniform(0, 10, size=[len(state), 1])).to(self.device)
 
-        del new_actor
+        random_action = torch.normal(action, exploration_rate)
+        temp_random_with_clk_action = torch.abs(torch.normal(action[with_clk_indexs], exploration_rate))
+        temp_random_without_clk_action = -torch.abs(torch.normal(action[without_clk_indexs], exploration_rate))
+        random_action[with_clk_indexs] = temp_random_with_clk_action
+        random_action[without_clk_indexs] = temp_random_without_clk_action
 
-        return model_action, action
+        ctr_actions = torch.where(random_seeds >= exploration_rate, model_action,
+                                  torch.sigmoid(random_action))
+
+        actions = torch.where(random_seeds >= exploration_rate, action, random_action)
+
+        return ctr_actions, actions
+
+    # def paramter_noise(self, new_actor, exploration_rate):
+    #     new_actor.bn_input.weight.data += torch.normal(0, exploration_rate, size=new_actor.bn_input.weight.data.size()).to(self.device)
+    #     for i, layer in enumerate(new_actor.mlp):
+    #         if i % 3 == 0 or (i - 1) % 3 == 0:
+    #             layer.weight.data += torch.normal(0, exploration_rate, size=layer.weight.data.size()).to(self.device)
+    #
+    #     return new_actor
+    #
+    # def choose_action(self, state, exploration_rate):
+    #     # state = self.embedding_layer.forward(state)
+    #     new_actor = self.paramter_noise(copy.deepcopy(self.Actor), exploration_rate)
+    #     # print(self.Actor.mlp[0].weight.data)
+    #     new_actor.eval()
+    #     with torch.no_grad():
+    #         action = new_actor.forward(state)
+    #     model_action = torch.sigmoid(action)
+    #
+    #     del new_actor
+    #
+    #     return model_action, action
 
     def choose_best_action(self, state):
         # state = self.embedding_layer.forward(state)
