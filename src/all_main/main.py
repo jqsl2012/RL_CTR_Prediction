@@ -430,7 +430,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     memory_size = 1000000
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
-    embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
+    embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
     embedding_layer.load_embedding(FM_pretain_params)
 
     loss = nn.BCELoss()

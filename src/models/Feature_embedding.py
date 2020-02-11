@@ -44,7 +44,8 @@ class Feature_Embedding(nn.Module):
 
     def load_embedding(self, pretrain_params):
         self.feature_embedding.weight.data.copy_(
-            torch.from_numpy(pretrain_params['feature_embedding.weight'].cpu())
+            torch.from_numpy(
+                np.array(pretrain_params['feature_embedding.weight'].cpu()))
         )
 
     def forward(self, x):
