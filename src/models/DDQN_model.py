@@ -3,7 +3,6 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.models.Feature_embedding import Feature_Embedding
 import copy
 import datetime
 
@@ -25,8 +24,6 @@ class Net(nn.Module):
         self.feature_nums = feature_nums
         self.latent_dims = latent_dims
 
-        self.embedding_layer = Feature_Embedding(self.feature_nums, self.field_nums, self.latent_dims)
-
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
         # self.bn_input = nn.BatchNorm1d(self.input_dims)
@@ -34,7 +31,7 @@ class Net(nn.Module):
 
         deep_input_dims = self.input_dims
         layers = list()
-        neuron_nums = [500, 500, 500]
+        neuron_nums = [300, 300, 300]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -50,8 +47,6 @@ class Net(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
-        input = self.embedding_layer.forward(input)
-
         actions_value = self.mlp(input)
 
         return actions_value
@@ -68,7 +63,7 @@ class DoubleDQN:
             learning_rate=1e-3,  # 学习率
             reward_decay=1,  # 奖励折扣因子,偶发过程为1
             replace_target_iter=30,  # 每30次训练则替换一次target_net的参数
-            memory_size=500,  # 经验池的大小
+            memory_size=300,  # 经验池的大小
             batch_size=32,  # 每次更新时从memory里面取多少数据出来，mini-batch
             device='cuda:0',
     ):

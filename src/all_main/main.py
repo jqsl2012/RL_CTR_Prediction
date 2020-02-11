@@ -11,6 +11,7 @@ import src.models.DDQN_model as Model
 import src.models.p_model as p_model
 import src.models.DDPG_for_PG_model as DDPG_for_PG_model
 import src.models.creat_data as Data
+from src.models.Feature_embedding import Feature_Embedding
 
 import torch
 import torch.nn as nn
@@ -270,7 +271,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
     return y_preds, return_prob_weights, rewards
 
 
-def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, exploration_rate, device):
+def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, embedding_layer, exploration_rate, device):
     total_loss = 0
     log_intervals = 0
     total_rewards = 0
@@ -279,9 +280,11 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, 
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
-        actions = ddqn_model.choose_action(features, exploration_rate)
+        embedding_vectors = embedding_layer.forward(features)
 
-        prob_weights = ddpg_for_pg_model.choose_action(features, actions.float(), exploration_rate)
+        actions = ddqn_model.choose_action(embedding_vectors, exploration_rate)
+
+        prob_weights = ddpg_for_pg_model.choose_action(embedding_vectors, actions.float(), exploration_rate)
 
         y_preds, prob_weights_new, rewards = \
             generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='train')
@@ -309,15 +312,18 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, ou_noise_obj, 
 
     return total_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
 
-def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
+def test(ddqn_model, ddpg_for_pg_model, model_dict, embedding_layer, data_loader, loss, device):
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
     with torch.no_grad():
         for i, (features, labels) in enumerate(data_loader):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            actions = ddqn_model.choose_best_action(features)
-            prob_actions, prob_weights = ddpg_for_pg_model.choose_best_action(features, actions.float())
+
+            embedding_vectors = embedding_layer.forward(features)
+
+            actions = ddqn_model.choose_best_action(embedding_vectors)
+            prob_actions, prob_weights = ddpg_for_pg_model.choose_best_action(embedding_vectors, actions.float())
 
             # x = torch.argsort(prob_weights)[:, 0]
             # print(len((actions == 2).nonzero()), len((x == 3  ).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
@@ -335,15 +341,18 @@ def test(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, loss, device):
     return roc_auc_score(targets, predicts), total_test_loss / intervals
 
 
-def submission(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, device):
+def submission(ddqn_model, ddpg_for_pg_model, model_dict, embedding_layer, data_loader, device):
     targets, predicts = list(), list()
     final_actions = torch.LongTensor().to(device)
     final_prob_weights = torch.FloatTensor().to(device)
     with torch.no_grad():
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-            actions = ddqn_model.choose_best_action(features)
-            prob_actions, prob_weights = ddpg_for_pg_model.choose_best_action(features, actions.float())
+
+            embedding_vectors = embedding_layer.forward(features)
+
+            actions = ddqn_model.choose_best_action(embedding_vectors)
+            prob_actions, prob_weights = ddpg_for_pg_model.choose_best_action(embedding_vectors, actions.float())
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                                              labels, device, mode='test')
 
@@ -356,8 +365,7 @@ def submission(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, device):
     return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
 
-def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, learning_rate,
-         weight_decay, early_stop_type, batch_size, device, save_param_dir, ou_noise_obj):
+def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, batch_size, device, save_param_dir):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
@@ -422,6 +430,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     memory_size = 1000000
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
+    embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
+    embedding_layer.load_embedding(FM_pretain_params)
+
     loss = nn.BCELoss()
 
     valid_aucs = []
@@ -436,12 +447,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss, train_average_rewards, train_auc = train(ddqn_model, ddpg_for_pg_model, model_dict, train_data_loader, ou_noise_obj, exploration_rate, device)
+        train_average_loss, train_average_rewards, train_auc = train(ddqn_model, ddpg_for_pg_model, model_dict, train_data_loader, embedding_layer, exploration_rate, device)
 
-        # torch.save(ddqn_model.eval_net.state_dict(), save_param_dir + 'ddqn_model' + str(np.mod(epoch_i, 5)) + '.pth')
-        # torch.save(ddpg_for_pg_model.Actor.state_dict(), save_param_dir + 'ddpg_for_pg_model' + str(np.mod(epoch_i, 5)) + '.pth')
-
-        auc, valid_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
+        auc, valid_loss = test(ddqn_model, ddpg_for_pg_model, model_dict, embedding_layer, test_data_loader, loss, device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
 
@@ -451,25 +459,13 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
                'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         exploration_rate -= 1/100
-        # if eva_stopping(valid_aucs, valid_losses, early_stop_type):
-        #     early_stop_index = np.mod(epoch_i - 4, 5)
-        #     is_early_stop = True
-        #     break
 
     end_time = datetime.datetime.now()
 
-    if is_early_stop:
-        test_ddqn_model, test_ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
-        load_pg_path = save_param_dir + 'ddqn_model' + str(early_stop_index) + '.pth'
-        load_ddpg_path = save_param_dir + 'ddpg_for_pg_model' + str(early_stop_index) + '.pth'
+    test_ddqn_model = ddqn_model
+    test_ddpg_for_pg_model = ddpg_for_pg_model
 
-        test_ddqn_model.eval_net.load_state_dict(torch.load(load_pg_path, map_location=device))  # 加载最优参数
-        test_ddpg_for_pg_model.Actor.load_state_dict(torch.load(load_ddpg_path, map_location=device))  # 加载最优参数
-    else:
-        test_ddqn_model = ddqn_model
-        test_ddpg_for_pg_model = ddpg_for_pg_model
-
-    auc, test_loss = test(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, loss, device)
+    auc, test_loss = test(test_ddqn_model, test_ddpg_for_pg_model, model_dict, embedding_layer, test_data_loader, loss, device)
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
     submission_path = data_path + dataset_name + campaign_id + model_name + '/' # ctr 预测结果存放文件夹位置
@@ -477,7 +473,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
         os.mkdir(submission_path)
 
     # 测试集submission
-    test_predicts, test_auc, actions, prob_weights = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, test_data_loader, device)
+    test_predicts, test_auc, actions, prob_weights = submission(test_ddqn_model, test_ddpg_for_pg_model, model_dict, embedding_layer, test_data_loader, device)
 
     prob_weights_df = pd.DataFrame(data=prob_weights)
     prob_weights_df.to_csv(submission_path + 'test_prob_weights.csv', header=None)
@@ -539,11 +535,7 @@ if __name__ == '__main__':
         args.latent_dims,
         args.model_name,
         args.epoch,
-        args.learning_rate,
-        args.weight_decay,
-        args.early_stop_type,
         args.batch_size,
         args.device,
-        args.save_param_dir,
-        ou_noise
+        args.save_param_dir
     )
