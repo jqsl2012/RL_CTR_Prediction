@@ -298,8 +298,10 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, embedding_laye
         ddqn_model.learn()
 
         b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
-        td_error = ddpg_for_pg_model.learn_c(b_s, b_a, b_r, b_s_, b_pg_a)
-        a_loss = ddpg_for_pg_model.learn_a(b_s, b_pg_a)
+        b_s_embedding = embedding_layer.forward(b_s)
+        b_s_embedding_ = embedding_layer.forward(b_s_)
+        td_error = ddpg_for_pg_model.learn_c(b_s_embedding, b_a, b_r, b_s_embedding_, b_pg_a)
+        a_loss = ddpg_for_pg_model.learn_a(b_s_embedding, b_pg_a)
         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Actor, ddpg_for_pg_model.Actor_)
         ddpg_for_pg_model.soft_update(ddpg_for_pg_model.Critic, ddpg_for_pg_model.Critic_)
 
