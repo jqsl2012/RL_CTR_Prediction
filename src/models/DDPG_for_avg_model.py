@@ -24,10 +24,7 @@ class Actor(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        self.bn_input = nn.BatchNorm1d(1)
-        # nn.init.xavier_uniform_(self.bn_input.weight)
-
-        deep_input_dims = self.input_dims + 1
+        deep_input_dims = self.input_dims
         layers = list()
         neuron_nums = [500, 500, 500]
         for neuron_num in neuron_nums:
@@ -57,9 +54,7 @@ class Critic(nn.Module):
 
         self.embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims)
 
-        self.bn_input = nn.BatchNorm1d(1)
-        # nn.init.xavier_uniform_(self.bn_input.weight)
-        deep_input_dims = input_dims + action_nums + 1
+        deep_input_dims = input_dims + action_nums
         layers = list()
 
         neuron_nums = [500, 500, 500]

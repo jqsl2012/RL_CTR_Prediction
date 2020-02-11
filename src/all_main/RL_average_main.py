@@ -65,9 +65,8 @@ def generate_preds(model_dict, features, prob_weights, device):
     current_pretrain_y_preds = torch.cat([
         pretrain_y_preds[l] for l in range(pretrain_model_len)
     ], dim=1)
-
-    current_model_y_preds_avg = torch.mul(prob_weights, current_pretrain_y_preds).mean().view(-1, 1)
-    current_pretrain_y_preds_avg = current_pretrain_y_preds.mean().view(-1, 1)
+    current_model_y_preds_avg = torch.mul(prob_weights, current_pretrain_y_preds).mean(dim=1).view(-1, 1)
+    current_pretrain_y_preds_avg = current_pretrain_y_preds.mean(dim=1).view(-1, 1)
 
     rewards = torch.where(current_model_y_preds_avg >= current_pretrain_y_preds_avg,
                           basic_rewards * 1,
@@ -93,7 +92,7 @@ def train(ddpg_for_avg_Model, model_dict, data_loader, exploration_rate, device)
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        action_rewards = torch.cat([prob_weights, rewards], dim=1)
+        action_rewards = torch.cat([prob_actions, rewards], dim=1)
         ddpg_for_avg_Model.store_transition(features, action_rewards)
 
         b_s, b_a, b_r, b_s_ = ddpg_for_avg_Model.sample_batch()

@@ -48,7 +48,7 @@ class Actor(nn.Module):
 
         obs = torch.cat([input, self.bn_input(ddqn_a)], dim=1)
 
-        out = self.mlp(obs)
+        out = torch.softmax(self.mlp(obs), dim=1)
 
         return out
 
@@ -191,13 +191,13 @@ class DDPG():
 
         random_seeds = torch.rand(len(state), 1).to(self.device)
 
-        random_action = torch.normal(action, exploration_rate)
+        random_action = torch.softmax(torch.normal(action, exploration_rate), dim=1)
 
         # exploration_rate = max(exploration_rate, 0.1)
         actions = torch.where(random_seeds >= exploration_rate, action,
                               random_action)
 
-        return actions, torch.softmax(actions, dim=1)
+        return actions
 
     def choose_best_action(self, state, ddqn_a):
         # state = self.embedding_layer.forward(state)
