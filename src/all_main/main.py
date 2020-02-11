@@ -295,8 +295,12 @@ def train(ddqn_model, ddpg_for_pg_model, model_dict, data_loader, embedding_laye
         ddqn_model.store_transition(torch.cat([features, actions, rewards.long()], dim=1))
         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
         ddpg_for_pg_model.store_transition(features, action_rewards, actions.float())
-        ddqn_model.learn()
-
+        # ddqn training
+        ddqn_b_s, ddqn_b_a, ddqn_b_r, ddqn_b_s_ = ddqn_model.sample_batch()
+        ddqn_b_s_embedding = embedding_layer.forward(ddqn_b_s)
+        ddqn_b_s_embedding_ = embedding_layer.forward(ddqn_b_s_)
+        ddqn_model.learn(ddqn_b_s_embedding, ddqn_b_a, ddqn_b_r, ddqn_b_s_embedding_)
+        # ddpg training
         b_s, b_a, b_r, b_s_, b_pg_a = ddpg_for_pg_model.sample_batch()
         b_s_embedding = embedding_layer.forward(b_s)
         b_s_embedding_ = embedding_layer.forward(b_s_)

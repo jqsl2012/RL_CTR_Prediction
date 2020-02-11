@@ -175,18 +175,7 @@ class DoubleDQN:
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - 0.001) + param.data * 0.001)
 
-    # 定义DQN的学习过程
-    def learn(self):
-        # 清除显存缓存
-        torch.cuda.empty_cache()
-
-        # self.soft_update(self.target_net, self.eval_net)
-        # # 检查是否达到了替换target_net参数的步数
-        if self.learn_step_counter % self.replace_target_iter == 0:
-             self.target_net.load_state_dict(self.eval_net.state_dict())
-        #     # print(('\n目标网络参数已经更新\n'))
-        self.learn_step_counter += 1
-
+    def sample_batch(self):
         # 训练过程
         # 从memory中随机抽取batch_size的数据
         if self.memory_counter > self.memory_size:
@@ -198,14 +187,24 @@ class DoubleDQN:
         batch_memory = self.memory[sample_index, :].long()
 
         # 获取到q_next（target_net产生）以及q_eval（eval_net产生）
-        # 如store_transition函数中存储所示，state存储在[0, feature_nums-1]的位置（即前feature_numbets）
-        # state_存储在[feature_nums+1，memory_size]（即后feature_nums的位置）
         b_s = batch_memory[:, :self.field_nums]
-        # b_s = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
         b_a = batch_memory[:, self.field_nums: self.field_nums + 1]
         b_r = batch_memory[:, self.field_nums + 1].view(-1, 1).float()
         b_s_ = batch_memory[:, :self.field_nums]
-        # b_s_ = self.embedding_layer.forward(batch_memory[:, :self.field_nums])
+
+        return b_s, b_a, b_r, b_s_
+
+    # 定义DQN的学习过程
+    def learn(self, b_s, b_a, b_r, b_s_):
+        # 清除显存缓存
+        torch.cuda.empty_cache()
+
+        # self.soft_update(self.target_net, self.eval_net)
+        # # 检查是否达到了替换target_net参数的步数
+        if self.learn_step_counter % self.replace_target_iter == 0:
+             self.target_net.load_state_dict(self.eval_net.state_dict())
+        #     # print(('\n目标网络参数已经更新\n'))
+        self.learn_step_counter += 1
 
         # q_eval w.r.t the action in experience
         q_eval = self.eval_net.forward(b_s).gather(1, b_a - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
