@@ -30,10 +30,10 @@ def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, me
 
     ddqn_model = Model.DoubleDQN(feature_nums, field_nums, latent_dims,
                                     campaign_id=campaign_id, action_nums=action_nums, memory_size=memory_size,
-                                 batch_size=batch_size // 8, device=device)
+                                 batch_size=batch_size, device=device)
     ddpg_for_pg_Model = DDPG_for_PG_model.DDPG(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
-                                               campaign_id=campaign_id, batch_size=batch_size // 8,
+                                               campaign_id=campaign_id, batch_size=batch_size,
                                                memory_size=memory_size, device=device)
     return ddqn_model, ddpg_for_pg_Model
 
@@ -465,6 +465,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
                'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         exploration_rate -= 1/100
+        exploration_rate = max(exploration_rate, 0.1)
 
     end_time = datetime.datetime.now()
 
@@ -515,14 +516,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='PG_DDPG', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
