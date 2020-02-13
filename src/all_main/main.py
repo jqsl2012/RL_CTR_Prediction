@@ -385,18 +385,23 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretain_params)
+    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    FFM.load_state_dict(FFM_pretrain_params)
     FFM.eval()
 
-    FM = p_model.FM(feature_nums, latent_dims)
-    FM_pretain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
-    FM.load_state_dict(FM_pretain_params)
-    FM.eval()
+    LR = p_model.LR(feature_nums)
+    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    LR.load_state_dict(LR_pretrain_params)
+    LR.eval()
 
+    FM = p_model.FM(feature_nums, latent_dims)
+    FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
+    FM.load_state_dict(FM_pretrain_params)
+    FM.eval()
+    
     AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
-    AFM_pretain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
-    AFM.load_state_dict(AFM_pretain_params)
+    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    AFM.load_state_dict(AFM_pretrain_params)
     AFM.eval()
     
     WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
@@ -429,7 +434,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     DCN.load_state_dict(DCN_pretrain_params)
     DCN.eval()
 
-    model_dict = {0: FM.to(device), 1: FFM.to(device), 2: WandD.to(device), 3: IPNN.to(device), 4: DCN.to(device)}
+    model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    # model_dict = {0: WandD.to(device), 1: DeepFM.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
 
     model_dict_len = len(model_dict)
 
@@ -437,7 +443,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     ddqn_model, ddpg_for_pg_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
-    embedding_layer.load_embedding(FM_pretain_params)
+    embedding_layer.load_embedding(FM_pretrain_params)
 
     loss = nn.BCELoss()
 
