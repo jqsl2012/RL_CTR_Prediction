@@ -29,7 +29,7 @@ def setup_seed(seed):
 def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
     RL_model = hybrid_rl_model.Hybrid_RL_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
-                                               campaign_id=campaign_id, batch_size=batch_size,
+                                               campaign_id=campaign_id, batch_size=batch_size // 16,
                                                memory_size=memory_size, device=device)
     return RL_model
 
@@ -416,7 +416,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
