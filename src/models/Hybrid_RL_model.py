@@ -211,7 +211,6 @@ class Hybrid_RL_Model():
             action_values = self.Discrete_Actor.forward(state)
             action = torch.argsort(-action_values)[:, 0] + 2
 
-
         return action.view(-1, 1)
 
     def soft_update(self, net, net_target):
