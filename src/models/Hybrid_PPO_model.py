@@ -4,14 +4,18 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
+
 def setup_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
+
+
 # 设置随机数种子
 setup_seed(1)
+
 
 class Discrete_Actor(nn.Module):
     def __init__(self, input_dims, action_nums):
@@ -36,14 +40,13 @@ class Discrete_Actor(nn.Module):
 
         return actions_value
 
+
 class Continuous_Actor(nn.Module):
     def __init__(self, input_dims, action_nums):
         super(Continuous_Actor, self).__init__()
         self.input_dims = input_dims
 
-        self.bn_input = nn.BatchNorm1d(1)
-
-        deep_input_dims = self.input_dims + 1
+        deep_input_dims = self.input_dims
         layers = list()
         neuron_nums = [300, 300, 300]
         for neuron_num in neuron_nums:
@@ -56,21 +59,19 @@ class Continuous_Actor(nn.Module):
 
         self.mlp = nn.Sequential(*layers)
 
-    def forward(self, input, discrete_a):
-        obs = torch.cat([input, self.bn_input(discrete_a)], dim=1)
-
-        out = torch.softmax(self.mlp(obs), dim=1)
+    def forward(self, input):
+        out = torch.softmax(self.mlp(input), dim=1)
 
         return out
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dims, action_nums):
+    def __init__(self, input_dims):
         super(Critic, self).__init__()
 
         self.bn_input = nn.BatchNorm1d(1)
 
-        deep_input_dims = input_dims + action_nums + 1
+        deep_input_dims = input_dims
         layers = list()
 
         neuron_nums = [300, 300, 300]
@@ -84,13 +85,11 @@ class Critic(nn.Module):
 
         self.mlp = nn.Sequential(*layers)
 
-    def forward(self, input, action, discrete_a):
-        obs = torch.cat([input, self.bn_input(discrete_a)], dim=1)
-        cat = torch.cat([obs, action], dim=1)
-
-        q_out = self.mlp(cat)
+    def forward(self, input):
+        q_out = self.mlp(input)
 
         return q_out
+
 
 class Hybrid_RL_Model():
     def __init__(
@@ -100,12 +99,12 @@ class Hybrid_RL_Model():
             latent_dims=5,
             action_nums=2,
             campaign_id='1458',
-            lr_A=5e-4,
+            lr_A=1e-4,
             lr_C=1e-3,
             reward_decay=1,
             memory_size=4096000,
             batch_size=256,
-            tau=0.005, # for target network soft update
+            tau=0.005,  # for target network soft update
             device='cuda:0',
     ):
         self.feature_nums = feature_nums
@@ -132,11 +131,11 @@ class Hybrid_RL_Model():
 
         self.Continuous_Actor = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
-        
+        self.Critic = Critic(self.input_dims).to(self.device)
+
         self.Continuous_Actor_ = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor_ = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic_ = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
+        self.Critic_ = Critic(self.input_dims).to(self.device)
 
         # 优化器
         self.optimizer_c_a = torch.optim.Adam(self.Continuous_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
@@ -183,7 +182,7 @@ class Hybrid_RL_Model():
                               random_action)
 
         return actions
-    
+
     def choose_discrete_action(self, state, exploration_rate):
         self.Discrete_Actor.eval()
         with torch.no_grad():
@@ -204,13 +203,12 @@ class Hybrid_RL_Model():
             action = self.Continuous_Actor.forward(state, discrete_a)
 
         return action
-    
+
     def choose_best_discrete_action(self, state):
         self.Discrete_Actor.eval()
         with torch.no_grad():
             action_values = self.Discrete_Actor.forward(state)
             action = torch.argsort(-action_values)[:, 0] + 2
-
 
         return action.view(-1, 1)
 
@@ -261,7 +259,8 @@ class Hybrid_RL_Model():
         return c_a_loss.item()
 
     def learn_d_a(self, b_s, b_discrete_a, b_r, b_s_):
-        q_eval = self.Discrete_Actor.forward(b_s).gather(1, b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
+        q_eval = self.Discrete_Actor.forward(b_s).gather(1,
+                                                         b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
         q_next = self.Discrete_Actor_.forward(b_s_).detach()  # detach from graph, don't backpropagate，因为target网络不需要训练
         # 下一状态s的eval_net值
         q_eval_next = self.Discrete_Actor.forward(b_s_)
@@ -279,6 +278,7 @@ class Hybrid_RL_Model():
 
         return d_a_loss.item()
 
+
 class OrnsteinUhlenbeckNoise:
     def __init__(self, mu):
         self.theta, self.dt, self.sigma = 0.15, 0.01, 0.2
@@ -287,6 +287,6 @@ class OrnsteinUhlenbeckNoise:
 
     def __call__(self):
         x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + \
-                self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
+            self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
         self.x_prev = x
         return x

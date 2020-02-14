@@ -229,8 +229,8 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
 
             embedding_vectors = embedding_layer.forward(features)
 
-            actions = rl_model.choose_best_continuous_action(embedding_vectors)
-            prob_weights = rl_model.choose_best_discrete_action(embedding_vectors, actions.float())
+            actions = rl_model.choose_best_discrete_action(embedding_vectors)
+            prob_weights = rl_model.choose_best_continuous_action(embedding_vectors, actions.float())
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -348,8 +348,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
               train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        exploration_rate *= 0.95
-        exploration_rate = max(exploration_rate, 0.1)
+        if (epoch_i + 1) % 10 == 0:
+            exploration_rate *= 0.95
+            exploration_rate = max(exploration_rate, 0.1)
 
     end_time = datetime.datetime.now()
 
@@ -412,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=100)
+    parser.add_argument('--epoch', type=int, default=500)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
