@@ -144,6 +144,7 @@ class Hybrid_RL_Model():
         self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
+        self.a_loss_func = nn.MSELoss()
 
     def store_transition(self, features, action_rewards, discrete_actions):
         transition_lens = len(features)
@@ -235,13 +236,13 @@ class Hybrid_RL_Model():
         return b_s, b_a, b_r, b_s_, b_discrete_a
 
     def learn_c(self, b_s, b_a, b_r, b_s_, b_discrete_a):
-        target_discrete_action = torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2
+        target_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
         q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
                                                                                                 target_discrete_action),
                                                            target_discrete_action).detach()
         q = self.Critic.forward(b_s, b_a, b_discrete_a)
 
-        td_error = self.loss_func(q, q_target)
+        td_error = F.smooth_l1_loss(q, q_target)
 
         self.optimizer_c.zero_grad()
         td_error.backward()
@@ -272,7 +273,7 @@ class Hybrid_RL_Model():
         q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
 
         # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target)
+        d_a_loss = F.smooth_l1_loss(q_eval, q_target)
 
         self.optimizer_d_a.zero_grad()
         d_a_loss.backward()

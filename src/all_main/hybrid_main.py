@@ -349,8 +349,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         if (epoch_i + 1) % 10 == 0:
-            exploration_rate *= 0.95
-            exploration_rate = max(exploration_rate, 0.1)
+            exploration_rate *= 0.9
+            # exploration_rate = max(exploration_rate, 0.1)
 
     end_time = datetime.datetime.now()
 
@@ -413,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=1)
+    parser.add_argument('--epoch', type=int, default=300)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
