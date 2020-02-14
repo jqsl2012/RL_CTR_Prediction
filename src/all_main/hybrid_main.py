@@ -167,7 +167,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         predicts.extend(y_preds.tolist())
 
         action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
-        rl_model.store_transition(features, action_rewards, actions.float())
+        rl_model.store_transition(features, action_rewards, actions)
 
         b_s, b_a, b_r, b_s_, b_discrete_a = rl_model.sample_batch()
         b_s_embedding = embedding_layer.forward(b_s)
@@ -326,6 +326,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
 
     start_time = datetime.datetime.now()
     exploration_rate = 0.9
+
+    rewards_records = []
     for epoch_i in range(epoch):
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
@@ -334,6 +336,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
         train_average_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
+        rewards_records.append(train_average_rewards)
 
         auc, valid_loss = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
                                device)
@@ -382,6 +385,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
                save_param_dir + campaign_id + '/continuous_model' + 'best.pth')  # 存储最优参数
     torch.save(test_rl_model.Discrete_Actor.state_dict(),
                save_param_dir + campaign_id + '/discrete_model' + 'best.pth')  # 存储最优参数
+
+    rewards_records_df = pd.DataFrame(data=rewards_records)
+    rewards_records_df.to_csv(submission_path + 'train_rewards', header=None)
 
 
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
