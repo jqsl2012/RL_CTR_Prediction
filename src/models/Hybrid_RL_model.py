@@ -235,7 +235,7 @@ class Hybrid_RL_Model():
         return b_s, b_a, b_r, b_s_, b_discrete_a
 
     def learn_c(self, b_s, b_a, b_r, b_s_, b_discrete_a):
-        target_discrete_action = self.Discrete_Actor_.forward(b_s_)
+        target_discrete_action = torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2
         q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
                                                                                                 target_discrete_action),
                                                            target_discrete_action).detach()
