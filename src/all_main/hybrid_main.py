@@ -93,14 +93,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
                 current_basic_rewards[current_with_clk_indexs] * 1,
-                current_basic_rewards[current_with_clk_indexs] * -1
+                current_basic_rewards[current_with_clk_indexs] * 0
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                     current_without_clk_indexs].mean(dim=1).view(-1, 1),
                 current_basic_rewards[current_without_clk_indexs] * 1,
-                current_basic_rewards[current_without_clk_indexs] * -1
+                current_basic_rewards[current_without_clk_indexs] * 0
             )
         else:
             current_softmax_weights = torch.softmax(
@@ -127,14 +127,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
                 current_y_preds[current_with_clk_indexs] >= current_row_preds[current_with_clk_indexs].mean(dim=1).view(
                     -1, 1),
                 current_basic_rewards[current_with_clk_indexs] * 1,
-                current_basic_rewards[current_with_clk_indexs] * -1
+                current_basic_rewards[current_with_clk_indexs] * 0
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(
                     dim=1).view(-1, 1),
                 current_basic_rewards[current_without_clk_indexs] * 1,
-                current_basic_rewards[current_without_clk_indexs] * -1
+                current_basic_rewards[current_without_clk_indexs] * 0
             )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -349,8 +349,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         if (epoch_i + 1) % 10 == 0:
-            exploration_rate *= 0.9
-            exploration_rate = max(exploration_rate, 0.1)
+            exploration_rate -= 1 / epoch
+            exploration_rate = max(exploration_rate, 0.01)
 
     end_time = datetime.datetime.now()
 
@@ -410,14 +410,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=300)
+    parser.add_argument('--epoch', type=int, default=500)
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=1024)
+    parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
