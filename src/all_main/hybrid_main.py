@@ -350,7 +350,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
 
         if (epoch_i + 1) % 10 == 0:
             exploration_rate *= 0.9
-            # exploration_rate = max(exploration_rate, 0.1)
+            exploration_rate = max(exploration_rate, 0.1)
 
     end_time = datetime.datetime.now()
 
@@ -388,7 +388,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
                save_param_dir + campaign_id + '/discrete_model' + 'best.pth')  # 存储最优参数
 
     rewards_records_df = pd.DataFrame(data=rewards_records)
-    rewards_records_df.to_csv(submission_path + 'train_rewards', header=None)
+    rewards_records_df.to_csv(submission_path + 'train_rewards.csv', header=None)
 
 
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
@@ -417,7 +417,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
