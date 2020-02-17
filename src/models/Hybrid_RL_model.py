@@ -100,7 +100,8 @@ class Hybrid_RL_Model():
             latent_dims=5,
             action_nums=2,
             campaign_id='1458',
-            lr_A=5e-4,
+            lr_C_A=5e-4,
+            lr_D_A=1e-3,
             lr_C=1e-3,
             reward_decay=1,
             memory_size=4096000,
@@ -113,7 +114,8 @@ class Hybrid_RL_Model():
         self.c_a_action_nums = action_nums
         self.d_actions_nums = action_nums - 1
         self.campaign_id = campaign_id
-        self.lr_A = lr_A
+        self.lr_C_A = lr_C_A
+        self.lr_D_A = lr_D_A
         self.lr_C = lr_C
         self.gamma = reward_decay
         self.latent_dims = latent_dims
@@ -139,8 +141,8 @@ class Hybrid_RL_Model():
         self.Critic_ = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
 
         # 优化器
-        self.optimizer_c_a = torch.optim.Adam(self.Continuous_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
-        self.optimizer_d_a = torch.optim.Adam(self.Discrete_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
+        self.optimizer_c_a = torch.optim.Adam(self.Continuous_Actor.parameters(), lr=self.lr_C_A, weight_decay=1e-5)
+        self.optimizer_d_a = torch.optim.Adam(self.Discrete_Actor.parameters(), lr=self.lr_D_A, weight_decay=1e-5)
         self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
@@ -235,10 +237,10 @@ class Hybrid_RL_Model():
         return b_s, b_a, b_r, b_s_, b_discrete_a
 
     def learn_c(self, b_s, b_a, b_r, b_s_, b_discrete_a):
-        target_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
+        # target_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
         q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
-                                                                                                target_discrete_action),
-                                                           target_discrete_action).detach()
+                                                                                                b_discrete_a),
+                                                           b_discrete_a).detach()
         q = self.Critic.forward(b_s, b_a, b_discrete_a)
 
         td_error = self.loss_func(q, q_target)
