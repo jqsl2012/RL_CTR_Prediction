@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+from torch.distributions import MultivariateNormal, Categorical
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -28,6 +29,7 @@ class Discrete_Actor(nn.Module):
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
+        layers.append(nn.Softmax(dim=-1))
 
         self.mlp = nn.Sequential(*layers)
 
@@ -53,13 +55,14 @@ class Continuous_Actor(nn.Module):
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
+        layers.append(nn.Softmax(dim=-1))
 
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input, discrete_a):
         obs = torch.cat([input, self.bn_input(discrete_a)], dim=1)
 
-        out = torch.softmax(self.mlp(obs), dim=1)
+        out = self.mlp(obs)
 
         return out
 
@@ -145,6 +148,7 @@ class Hybrid_RL_Model():
         self.optimizer_d_a = torch.optim.Adam(self.Discrete_Actor.parameters(), lr=self.lr_D_A, weight_decay=1e-5)
         self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
+        self.action_std = 0.5
         self.loss_func = nn.MSELoss(reduction='mean')
 
     def store_transition(self, features, action_rewards, discrete_actions):
@@ -174,31 +178,51 @@ class Hybrid_RL_Model():
     def choose_continuous_action(self, state, discrete_a, exploration_rate):
         self.Continuous_Actor.eval()
         with torch.no_grad():
-            action = self.Continuous_Actor.forward(state, discrete_a)
+            action_mean = self.Continuous_Actor.forward(state, discrete_a)
+
+        action_std = torch.diag(torch.full((self.c_a_action_nums,), exploration_rate * exploration_rate)).to(self.device)
+        action_dist = MultivariateNormal(action_mean, action_std)
+
+        actions = action_dist.sample()  # 分布产生的结果
+
+        ensemble_c_actions = torch.softmax(actions, dim=-1)  # 模型所需的动作
+
         self.Continuous_Actor.train()
 
-        random_seeds = torch.rand(len(state), 1).to(self.device)
+        return ensemble_c_actions
 
-        random_action = torch.softmax(torch.normal(action, exploration_rate), dim=1)
+    def evaluate_continuous_action(self, state, discrete_a, exploration_rate):
+        self.Continuous_Actor.eval()
+        with torch.no_grad():
+            action_mean = self.Continuous_Actor.forward(state, discrete_a)
 
-        actions = torch.where(random_seeds >= exploration_rate, action,
-                              random_action)
+        action_std = torch.diag(torch.full((self.c_a_action_nums,), exploration_rate * exploration_rate)).to(
+            self.device)
+        action_dist = MultivariateNormal(action_mean, action_std)
+        c_a_entropy = action_dist.entropy()
 
-        return actions
+        return c_a_entropy
     
-    def choose_discrete_action(self, state, exploration_rate):
+    def choose_discrete_action(self, state):
         self.Discrete_Actor.eval()
         with torch.no_grad():
             action_values = self.Discrete_Actor.forward(state)
+        action_dist = Categorical(action_values)
+        actions = action_dist.sample()  # 分布产生的结果
+        ensemble_d_actions = actions + 2  # 模型所需的动作
+
         self.Discrete_Actor.train()
 
-        random_seeds = torch.rand(len(state), 1).to(self.device)
-        max_action = torch.argsort(-action_values)[:, 0] + 2
-        random_action = torch.randint(low=2, high=self.d_actions_nums + 2, size=[len(state), 1]).to(self.device)
+        return ensemble_d_actions
 
-        actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1), random_action)
+    def evaluate_discrete_action(self, state):
+        self.Discrete_Actor.eval()
+        with torch.no_grad():
+            action_values = self.Discrete_Actor.forward(state)
+        action_dist = Categorical(action_values)
+        d_a_entropy = action_dist.entropy()
 
-        return actions
+        return d_a_entropy
 
     def choose_best_continuous_action(self, state, discrete_a):
         self.Continuous_Actor.eval()
@@ -254,8 +278,8 @@ class Hybrid_RL_Model():
         return td_error_r
 
     def learn_c_a(self, b_s, b_discrete_a):
-
-        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
+        c_a_entropy = self.evaluate_continuous_action(b_s, b_discrete_a)
+        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean() - 0.01 * c_a_entropy
 
         self.optimizer_c_a.zero_grad()
         c_a_loss.backward()
@@ -273,8 +297,9 @@ class Hybrid_RL_Model():
 
         q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
 
+        d_a_entropy = self.evaluate_discrete_action(b_s)
         # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target)
+        d_a_loss = self.loss_func(q_eval, q_target) - 0.01 * d_a_entropy
 
         self.optimizer_d_a.zero_grad()
         d_a_loss.backward()
