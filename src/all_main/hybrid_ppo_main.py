@@ -92,14 +92,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 1,
+                current_basic_rewards[current_with_clk_indexs] * 0,
                 current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                     current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 1,
+                current_basic_rewards[current_without_clk_indexs] * 0,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
         else:
@@ -126,14 +126,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_row_preds[current_with_clk_indexs].mean(dim=1).view(
                     -1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 1,
+                current_basic_rewards[current_with_clk_indexs] * 0,
                 current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(
                     dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 1,
+                current_basic_rewards[current_without_clk_indexs] * 0,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
 
@@ -167,8 +167,9 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         predicts.extend(y_preds.tolist())
 
         rl_model.store_memory(features, c_a, c_logprobs, d_a, d_logprobs, rewards)
-
-        loss = rl_model.learn()
+        states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards = rl_model.memory()
+        loss = rl_model.learn(embedding_layer.forward(states), embedding_layer.forward(states_), old_c_a,
+                              old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards)
 
         total_loss += loss  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
         log_intervals += 1

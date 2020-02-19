@@ -5,6 +5,7 @@ import numpy as np
 import random
 
 from torch.distributions import MultivariateNormal, Categorical
+import datetime
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -68,18 +69,23 @@ class Hybrid_Actor_Critic(nn.Module):
             nn.Softmax(dim=-1)
         )
 
-    def forward(self, input, type):
-        if type == 'critic':
-            state_value = self.Critic(input)
-            return state_value
-        elif type == 'c_a':
-            c_action = self.Continuous_Actor(input) # no softmax
-            return c_action
-        elif type == 'd_a':
-            d_action = self.Discrete_Actor(input) # no softmax
-            return d_action
-        else:
-            raise ModuleNotFoundError
+    def forward(self):
+        raise NotImplementedError
+
+    def c_action(self, input, type):
+        c_action = self.Continuous_Actor(input)  # no softmax
+
+        return c_action
+
+    def state_value(self, input, type):
+        state_value = self.Critic(input)
+
+        return state_value
+
+    def d_action(self, input ,type):
+        d_action = self.Discrete_Actor(input) # no softmax
+
+        return d_action
 
 
 class Hybrid_PPO_Model():
@@ -90,7 +96,7 @@ class Hybrid_PPO_Model():
             latent_dims=5,
             action_nums=2,
             campaign_id='1458',
-            lr_A=1e-4,
+            lr_A=1e-3,
             lr_C=1e-3,
             reward_decay=1,
             memory_size=4096000, # 设置为DataLoader的batch_size * n
@@ -142,7 +148,8 @@ class Hybrid_PPO_Model():
 
         # 由于已经定义了经验池的memory_size，如果超过此大小，旧的memory则被新的memory替换
         index_start = self.memory_counter % self.memory_size
-        index_end = (self.memory_counter + transition_lens) % self.memory_size
+        # index_end = (self.memory_counter + transition_lens) % self.memory_size
+        index_end = self.memory_counter + transition_lens
 
         self.memory_state[index_start: index_end, :] = states
         self.memory_c_a[index_start: index_end, :] = c_a
@@ -151,20 +158,22 @@ class Hybrid_PPO_Model():
         self.memory_d_logprobs[index_start: index_end, :] = d_logprobs
         self.memory_reward[index_start: index_end, :] = rewards
 
-        self.memory_counter += transition_lens
+        # self.memory_counter += transition_lens
 
     def evaluate_v(self, state):
-        return self.hybrid_actor_critic.forward(state, 'critic')
+        state_value = self.hybrid_actor_critic.state_value(state, 'critic')
+        return state_value
 
     def choose_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_mean = self.hybrid_actor_critic.forward(state, 'c_a')
+            action_mean = self.hybrid_actor_critic.c_action(state, 'c_a')
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
 
         actions = action_dist.sample() # 分布产生的结果
+
         actions_logprobs = action_dist.log_prob(actions).view(-1, 1)
 
         ensemble_c_actions = torch.softmax(actions, dim=-1) # 模型所需的动作
@@ -174,22 +183,21 @@ class Hybrid_PPO_Model():
         return actions, actions_logprobs, ensemble_c_actions
 
     def evaluate_c_a(self, state, action):
-        self.hybrid_actor_critic.eval()
-        with torch.no_grad():
-            action_mean = self.hybrid_actor_critic.forward(state, 'c_a')
+        action_mean = self.hybrid_actor_critic.c_action(state, 'c_a')
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
 
         action_logprobs = action_dist.log_prob(action)
+
         action_entropy = action_dist.entropy()
 
-        return action_logprobs, action_entropy
+        return action_logprobs.view(-1, 1), action_entropy.view(-1, 1)
 
     def choose_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.hybrid_actor_critic.forward(state, 'd_a')
+            action_values = self.hybrid_actor_critic.d_action(state, 'd_a')
 
         action_dist = Categorical(action_values)
         actions = action_dist.sample() # 分布产生的结果
@@ -200,30 +208,30 @@ class Hybrid_PPO_Model():
 
         self.hybrid_actor_critic.train()
 
-        return actions.view(-1, 1), actions_logprobs, ensemble_d_actions
+        return actions.view(-1, 1), actions_logprobs, ensemble_d_actions.view(-1, 1)
 
     def evaluate_d_a(self, state, action):
-        self.hybrid_actor_critic.eval()
-        with torch.no_grad():
-            action_values = self.hybrid_actor_critic.forward(state, 'd_a')
+        action_values = self.hybrid_actor_critic.d_action(state, 'd_a')
+
         action_dist = Categorical(action_values)
 
-        actions_logprobs = action_dist.log_prob(action)
+        actions_logprobs = action_dist.log_prob(action.squeeze(1))
+
         action_entropy = action_dist.entropy()
 
-        return actions_logprobs, action_entropy
+        return actions_logprobs.view(-1, 1), action_entropy.view(-1, 1)
 
     def choose_best_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            ensemble_c_actions = self.hybrid_actor_critic.forward(state, 'c_a')
+            ensemble_c_actions = self.hybrid_actor_critic.c_action(state, 'c_a')
 
         return ensemble_c_actions
 
     def choose_best_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = torch.softmax(self.hybrid_actor_critic.forward(state))
+            action_values = self.hybrid_actor_critic.d_action(state, 'd_a')
 
         ensemble_d_actions = torch.argsort(-action_values)[:, 0] + 2
 
@@ -235,16 +243,20 @@ class Hybrid_PPO_Model():
 
             # 对每一轮的奖励值进行累计折扣及归一化处理
 
-    def learn(self):
-        states = self.memory_state
-        states_ = self.memory_state
+    def memory(self):
+        states = self.memory_state.long()
+        states_ = self.memory_state.long()
         old_c_a = self.memory_c_a
         old_c_a_logprobs = self.memory_c_logprobs
         old_d_a = self.memory_d_a
         old_d_a_logprobs = self.memory_d_logprobs
         rewards = self.memory_reward
 
+        return states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards
+
+    def learn(self, states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards):
         return_loss = 0
+
         for _ in range(self.k_epochs):
             value_of_states_ = self.evaluate_v(states_) # 下一状态的V值
             value_of_states = self.evaluate_v(states) # 当前状态的V值
@@ -254,8 +266,8 @@ class Hybrid_PPO_Model():
 
             advantages = torch.zeros(size=[len(deltas), 1]).to(self.device)
             advantage = 0.0
-            for i, k in enumerate(reversed(range(deltas))):
-                advantage = self.gamma * self.lamda * advantage + deltas[k, :].item()
+            for i, deltas in enumerate(reversed(deltas)):
+                advantage = self.gamma * self.lamda * advantage + deltas.item()
                 advantages[i, :] = advantage
 
             # Normalizing the rewards
@@ -264,10 +276,11 @@ class Hybrid_PPO_Model():
             # Update Continuous Actor
             c_a_logprobs, c_a_entropy = self.evaluate_c_a(states, old_c_a)
             ratios = torch.exp(c_a_logprobs - old_c_a_logprobs)
+
             c_a_surr1 = ratios * advantages
             c_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
             c_a_loss = -torch.min(c_a_surr1, c_a_surr2).mean()
-            c_a_entropy_loss = 0.01 * c_a_entropy # A2C中提到的损失，主要为了控制生成动作分布
+            c_a_entropy_loss = 0.01 * c_a_entropy.mean() # A2C中提到的损失，主要为了控制生成动作分布
 
             # Update Discrete Actor
             d_a_logprobs, d_a_entropy = self.evaluate_d_a(states, old_d_a)
@@ -275,17 +288,18 @@ class Hybrid_PPO_Model():
             d_a_surr1 = ratios * advantages
             d_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
             d_a_loss = -torch.min(d_a_surr1, d_a_surr2).mean()
-            d_a_entropy_loss = 0.01 * d_a_entropy
+            d_a_entropy_loss = 0.01 * d_a_entropy.mean()
 
             # Update Value Layer(Critic)
             critic_loss = self.loss_func(value_of_states, td_target)
 
-            loss = c_a_loss - c_a_entropy_loss + d_a_loss - d_a_entropy_loss + 0.5 * critic_loss
-
+            loss = c_a_loss - c_a_entropy_loss
+            print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             # take gradient step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
+            print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
 
             return_loss = loss.item()
 
