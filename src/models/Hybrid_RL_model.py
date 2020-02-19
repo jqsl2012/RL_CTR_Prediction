@@ -100,7 +100,7 @@ class Hybrid_RL_Model():
             latent_dims=5,
             action_nums=2,
             campaign_id='1458',
-            lr_C_A=5e-4,
+            lr_C_A=3e-4,
             lr_D_A=1e-3,
             lr_C=1e-3,
             reward_decay=1,
