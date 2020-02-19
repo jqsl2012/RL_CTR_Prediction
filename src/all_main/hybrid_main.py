@@ -166,7 +166,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        action_rewards = torch.cat([prob_weights_new, rewards], dim=1)
+        action_rewards = torch.cat([prob_weights, rewards], dim=1)
         rl_model.store_transition(features, action_rewards, actions)
 
         b_s, b_a, b_r, b_s_, b_discrete_a = rl_model.sample_batch()
@@ -180,14 +180,14 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         rl_model.soft_update(rl_model.Discrete_Actor, rl_model.Discrete_Actor_)
         rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
-        total_loss += td_error  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        total_loss += c_a_loss  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
         log_intervals += 1
 
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
+    return c_a_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
 
 
 def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
@@ -348,9 +348,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
               train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
-        # if (epoch_i + 1) % 10 == 0:
-        #     exploration_rate -= 10 / epoch
-        #     exploration_rate = max(exploration_rate, 0.1)
+        if (epoch_i + 1) % 10 == 0:
+            exploration_rate -= 10 / epoch
+            exploration_rate = max(exploration_rate, 0.1)
 
     end_time = datetime.datetime.now()
 
@@ -410,7 +410,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=500)

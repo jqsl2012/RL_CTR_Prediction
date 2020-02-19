@@ -191,38 +191,23 @@ class Hybrid_RL_Model():
 
         return ensemble_c_actions
 
-    def evaluate_continuous_action(self, state, discrete_a, exploration_rate):
-        self.Continuous_Actor.eval()
-        with torch.no_grad():
-            action_mean = self.Continuous_Actor.forward(state, discrete_a)
-
-        action_std = torch.diag(torch.full((self.c_a_action_nums,), exploration_rate * exploration_rate)).to(
-            self.device)
-        action_dist = MultivariateNormal(action_mean, action_std)
-        c_a_entropy = action_dist.entropy()
-
-        return c_a_entropy
-    
-    def choose_discrete_action(self, state):
+    def choose_discrete_action(self, state, exploration_rate):
         self.Discrete_Actor.eval()
         with torch.no_grad():
             action_values = self.Discrete_Actor.forward(state)
+
+        random_seeds = torch.rand(len(state), 1).to(self.device)
         action_dist = Categorical(action_values)
         actions = action_dist.sample()  # 分布产生的结果
-        ensemble_d_actions = actions + 2  # 模型所需的动作
+        random_d_actions = actions + 2  # 模型所需的动作
+
+        max_d_actions = torch.argsort(-action_values)[:, 0] + 2
+
+        ensemble_d_actions = torch.where(random_seeds >= exploration_rate, max_d_actions.view(-1, 1), random_d_actions.view(-1, 1))
 
         self.Discrete_Actor.train()
 
-        return ensemble_d_actions
-
-    def evaluate_discrete_action(self, state):
-        self.Discrete_Actor.eval()
-        with torch.no_grad():
-            action_values = self.Discrete_Actor.forward(state)
-        action_dist = Categorical(action_values)
-        d_a_entropy = action_dist.entropy()
-
-        return d_a_entropy
+        return ensemble_d_actions.view(-1, 1)
 
     def choose_best_continuous_action(self, state, discrete_a):
         self.Continuous_Actor.eval()
@@ -278,8 +263,7 @@ class Hybrid_RL_Model():
         return td_error_r
 
     def learn_c_a(self, b_s, b_discrete_a):
-        c_a_entropy = self.evaluate_continuous_action(b_s, b_discrete_a)
-        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean() - 0.01 * c_a_entropy
+        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
 
         self.optimizer_c_a.zero_grad()
         c_a_loss.backward()
@@ -297,9 +281,8 @@ class Hybrid_RL_Model():
 
         q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
 
-        d_a_entropy = self.evaluate_discrete_action(b_s)
         # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target) - 0.01 * d_a_entropy
+        d_a_loss = self.loss_func(q_eval, q_target)
 
         self.optimizer_d_a.zero_grad()
         d_a_loss.backward()
