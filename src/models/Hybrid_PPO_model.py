@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
+from torch.distributions import MultivariateNormal, Categorical
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -16,79 +17,69 @@ def setup_seed(seed):
 # 设置随机数种子
 setup_seed(1)
 
-
-class Discrete_Actor(nn.Module):
+class Hybrid_Actor_Critic(nn.Module):
     def __init__(self, input_dims, action_nums):
-        super(Discrete_Actor, self).__init__()
+        super(Hybrid_Actor_Critic, self).__init__()
         self.input_dims = input_dims
 
-        deep_input_dims = self.input_dims
-        layers = list()
         neuron_nums = [300, 300, 300]
-        for neuron_num in neuron_nums:
-            layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
-            layers.append(nn.ReLU())
-            deep_input_dims = neuron_num
 
-        layers.append(nn.Linear(deep_input_dims, action_nums))
+        # Critic
+        self.Critic = nn.Sequential(
+            nn.Linear(self.input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], 1)
+        )
 
-        self.mlp = nn.Sequential(*layers)
+        # Continuous_Actor
+        self.Continuous_Actor = nn.Sequential(
+            nn.Linear(self.input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], action_nums),
+            nn.Softmax(dim=-1)
+        )
 
-    def forward(self, input):
-        actions_value = self.mlp(input)
+        # Discrete_Actor
+        self.Discrete_Actor = nn.Sequential(
+            nn.Linear(self.input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], action_nums - 1),
+            nn.Softmax(dim=-1)
+        )
 
-        return actions_value
-
-
-class Continuous_Actor(nn.Module):
-    def __init__(self, input_dims, action_nums):
-        super(Continuous_Actor, self).__init__()
-        self.input_dims = input_dims
-
-        deep_input_dims = self.input_dims
-        layers = list()
-        neuron_nums = [300, 300, 300]
-        for neuron_num in neuron_nums:
-            layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
-            layers.append(nn.ReLU())
-            deep_input_dims = neuron_num
-
-        layers.append(nn.Linear(deep_input_dims, action_nums))
-
-        self.mlp = nn.Sequential(*layers)
-
-    def forward(self, input):
-        out = torch.softmax(self.mlp(input), dim=1)
-
-        return out
-
-
-class Critic(nn.Module):
-    def __init__(self, input_dims):
-        super(Critic, self).__init__()
-
-        self.bn_input = nn.BatchNorm1d(1)
-
-        deep_input_dims = input_dims
-        layers = list()
-
-        neuron_nums = [300, 300, 300]
-        for neuron_num in neuron_nums:
-            layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
-            layers.append(nn.ReLU())
-            deep_input_dims = neuron_num
-
-        layers.append(nn.Linear(deep_input_dims, 1))
-
-        self.mlp = nn.Sequential(*layers)
-
-    def forward(self, input):
-        q_out = self.mlp(input)
-
-        return q_out
+    def forward(self, input, type):
+        if type == 'critic':
+            state_value = self.Critic(input)
+            return state_value
+        elif type == 'c_a':
+            c_action = self.Continuous_Actor(input) # no softmax
+            return c_action
+        elif type == 'd_a':
+            d_action = self.Discrete_Actor(input) # no softmax
+            return d_action
+        else:
+            raise ModuleNotFoundError
 
 
 class Hybrid_RL_Model():
@@ -102,15 +93,16 @@ class Hybrid_RL_Model():
             lr_A=1e-4,
             lr_C=1e-3,
             reward_decay=1,
-            memory_size=4096000,
+            memory_size=4096000, # 设置为DataLoader的batch_size * n
             batch_size=256,
             tau=0.005,  # for target network soft update
+            k_epochs=3, # update policy for k epochs
+            eps_clip=0.2, # clip parameter for ppo
             device='cuda:0',
     ):
         self.feature_nums = feature_nums
         self.field_nums = field_nums
-        self.c_a_action_nums = action_nums
-        self.d_actions_nums = action_nums - 1
+        self.action_nums = action_nums
         self.campaign_id = campaign_id
         self.lr_A = lr_A
         self.lr_C = lr_C
@@ -120,173 +112,170 @@ class Hybrid_RL_Model():
         self.batch_size = batch_size
         self.tau = tau
         self.device = device
+        self.action_std = 0.5
+        self.k_epochs = k_epochs
+        self.eps_clip = eps_clip
 
         self.memory_counter = 0
 
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
         self.memory_state = torch.zeros(size=[self.memory_size, self.field_nums]).to(self.device)
-        self.memory_action_reward = torch.zeros(size=[self.memory_size, self.c_a_action_nums + 1]).to(self.device)
-        self.memory_discrete_action = torch.zeros(size=[self.memory_size, 1]).to(self.device)
+        self.memory_c_a = torch.zeros(size=[self.memory_size, self.action_nums]).to(self.device)
+        self.memory_c_logprobs = torch.zeros(size=[self.memory_size, 1]).to(self.device)
+        self.memory_d_a = torch.zeros(size=[self.memory_size, 1]).to(self.device)
+        self.memory_d_logprobs = torch.zeros(size=[self.memory_size, 1]).to(self.device)
+        self.memory_reward = torch.zeros(size=[self.memory_size, 1]).to(self.device)
 
-        self.Continuous_Actor = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
-        self.Discrete_Actor = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic = Critic(self.input_dims).to(self.device)
+        self.hybrid_actor_critic = Hybrid_Actor_Critic(self.input_dims, self.action_nums).to(self.device)
 
-        self.Continuous_Actor_ = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
-        self.Discrete_Actor_ = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic_ = Critic(self.input_dims).to(self.device)
+        self.hybrid_actor_critic_old = Hybrid_Actor_Critic(self.input_dims, self.action_nums).to(self.device)
 
         # 优化器
-        self.optimizer_c_a = torch.optim.Adam(self.Continuous_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
-        self.optimizer_d_a = torch.optim.Adam(self.Discrete_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
-        self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer = torch.optim.Adam(self.hybrid_actor_critic.parameters(), lr=self.lr_A, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-    def store_transition(self, features, action_rewards, discrete_actions):
-        transition_lens = len(features)
+    def store_memory(self, states, c_a, c_logprobs, d_a, d_logprobs, rewards):
+        transition_lens = len(states)
 
         # 由于已经定义了经验池的memory_size，如果超过此大小，旧的memory则被新的memory替换
         index_start = self.memory_counter % self.memory_size
         index_end = (self.memory_counter + transition_lens) % self.memory_size
 
-        if index_end > index_start:
-            self.memory_state[index_start: index_end, :] = features  # 替换
-            self.memory_action_reward[index_start: index_end, :] = action_rewards
-            self.memory_discrete_action[index_start: index_end, :] = discrete_actions
-        else:
-            replace_len_1 = self.memory_size - index_start
-            self.memory_state[index_start: self.memory_size, :] = features[0: replace_len_1]
-            self.memory_action_reward[index_start: self.memory_size, :] = action_rewards[0: replace_len_1]
-            self.memory_discrete_action[index_start: self.memory_size, :] = discrete_actions[0: replace_len_1]
-
-            replace_len_2 = transition_lens - replace_len_1
-            self.memory_state[0: replace_len_2, :] = features[replace_len_1: transition_lens]
-            self.memory_action_reward[0: replace_len_2, :] = action_rewards[replace_len_1: transition_lens]
-            self.memory_discrete_action[0: replace_len_2, :] = discrete_actions[replace_len_1: transition_lens]
+        self.memory_state[index_start: index_end, :] = states
+        self.memory_c_a[index_start: index_end, :] = c_a
+        self.memory_c_logprobs[index_start: index_end, :] = c_logprobs
+        self.memory_d_a[index_start: index_end, :] = d_a
+        self.memory_d_logprobs[index_start: index_end, :] = d_logprobs
+        self.memory_reward[index_start: index_end, :] = rewards
 
         self.memory_counter += transition_lens
 
-    def choose_continuous_action(self, state, discrete_a, exploration_rate):
-        self.Continuous_Actor.eval()
+    def evaluate_v(self, state):
+        return self.hybrid_actor_critic.forward(state, 'critic')
+
+    def choose_c_a(self, state):
+        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action = self.Continuous_Actor.forward(state, discrete_a)
-        self.Continuous_Actor.train()
+            action_mean = self.hybrid_actor_critic.forward(state, 'c_a')
 
-        random_seeds = torch.rand(len(state), 1).to(self.device)
+        action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
+        action_dist = MultivariateNormal(action_mean, action_std)
 
-        random_action = torch.softmax(torch.normal(action, exploration_rate), dim=1)
+        actions = action_dist.sample() # 分布产生的结果
+        actions_logprobs = action_dist.log_prob(actions).view(-1, 1)
 
-        actions = torch.where(random_seeds >= exploration_rate, action,
-                              random_action)
+        ensemble_c_actions = torch.softmax(actions, dim=-1) # 模型所需的动作
 
-        return actions
+        self.hybrid_actor_critic.train()
 
-    def choose_discrete_action(self, state, exploration_rate):
-        self.Discrete_Actor.eval()
+        return actions, actions_logprobs, ensemble_c_actions
+
+    def evaluate_c_a(self, state, action):
+        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.Discrete_Actor.forward(state)
-        self.Discrete_Actor.train()
+            action_mean = self.hybrid_actor_critic.forward(state, 'c_a')
 
-        random_seeds = torch.rand(len(state), 1).to(self.device)
-        max_action = torch.argsort(-action_values)[:, 0] + 2
-        random_action = torch.randint(low=2, high=self.d_actions_nums + 2, size=[len(state), 1]).to(self.device)
+        action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
+        action_dist = MultivariateNormal(action_mean, action_std)
 
-        actions = torch.where(random_seeds >= exploration_rate, max_action.view(-1, 1), random_action)
+        action_logprobs = action_dist.log_prob(action)
 
-        return actions
+        return action_logprobs
 
-    def choose_best_continuous_action(self, state, discrete_a):
-        self.Continuous_Actor.eval()
+    def choose_d_a(self, state):
+        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action = self.Continuous_Actor.forward(state, discrete_a)
+            action_values = self.hybrid_actor_critic.forward(state, 'd_a')
 
-        return action
+        action_dist = Categorical(action_values)
+        actions = action_dist.sample() # 分布产生的结果
+
+        actions_logprobs = action_dist.log_prob(actions).view(-1, 1)
+
+        ensemble_d_actions = actions + 2 # 模型所需的动作
+
+        self.hybrid_actor_critic.train()
+
+        return actions.view(-1, 1), actions_logprobs, ensemble_d_actions
+
+    def evaluate_d_a(self, state, action):
+        self.hybrid_actor_critic.eval()
+        with torch.no_grad():
+            action_values = self.hybrid_actor_critic.forward(state, 'd_a')
+        action_dist = Categorical(action_values)
+
+        actions_logprobs = action_dist.log_prob(action)
+
+        return actions_logprobs
+
+    def choose_best_continuous_action(self, state):
+        self.hybrid_actor_critic.eval()
+        with torch.no_grad():
+            ensemble_c_actions = self.hybrid_actor_critic.forward(state, 'c_a')
+
+        return ensemble_c_actions
 
     def choose_best_discrete_action(self, state):
-        self.Discrete_Actor.eval()
+        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.Discrete_Actor.forward(state)
-            action = torch.argsort(-action_values)[:, 0] + 2
+            action_values = torch.softmax(self.hybrid_actor_critic.forward(state))
 
-        return action.view(-1, 1)
+        ensemble_d_actions = torch.argsort(-action_values)[:, 0] + 2
+
+        return ensemble_d_actions.view(-1, 1)
 
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def sample_batch(self):
-        if self.memory_counter > self.memory_size:
-            sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
-        else:
-            sample_index = torch.LongTensor(random.sample(range(self.memory_counter), self.batch_size)).to(self.device)
+            # 对每一轮的奖励值进行累计折扣及归一化处理
 
-        batch_memory_states = self.memory_state[sample_index, :].long()
-        batch_memory_action_rewards = self.memory_action_reward[sample_index, :]
-        b_discrete_a = self.memory_discrete_action[sample_index, :]
+    def learn(self):
+        states = self.memory_state
+        states_ = self.memory_state
+        old_c_a = self.memory_c_a
+        old_c_a_logprobs = self.memory_c_logprobs
+        old_d_a = self.memory_d_a
+        old_d_a_logprobs = self.memory_d_logprobs
+        rewards = self.memory_reward
 
-        b_s = batch_memory_states
-        b_a = batch_memory_action_rewards[:, 0: self.c_a_action_nums]
-        b_r = torch.unsqueeze(batch_memory_action_rewards[:, self.c_a_action_nums], 1)
-        b_s_ = batch_memory_states
+        for _ in range(self.k_epochs):
+            value_of_states_ = self.evaluate_v(states_) # 下一状态的V值
+            value_of_states = self.evaluate_v(states) # 当前状态的V值
 
-        return b_s, b_a, b_r, b_s_, b_discrete_a
+            td_target = rewards + self.gamma * value_of_states_
+            advantages = td_target - value_of_states
 
-    def learn_c(self, b_s, b_a, b_r, b_s_, b_discrete_a):
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_, b_discrete_a),
-                                                           b_discrete_a).detach()
-        q = self.Critic.forward(b_s, b_a, b_discrete_a)
+            # Normalizing the rewards
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
-        td_error = self.loss_func(q, q_target)
+            # Update Continuous Actor
+            c_a_logprobs = self.evaluate_c_a(states, old_c_a)
+            ratios = torch.exp(c_a_logprobs - old_c_a_logprobs)
+            c_a_surr1 = ratios * advantages
+            c_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
+            c_a_loss = -torch.min(c_a_surr1, c_a_surr2)
 
-        self.optimizer_c.zero_grad()
-        td_error.backward()
-        self.optimizer_c.step()
+            # Update Discrete Actor
+            d_a_logprobs = self.evaluate_d_a(states, old_d_a)
+            ratios = torch.exp(d_a_logprobs - old_d_a_logprobs)
+            d_a_surr1 = ratios * advantages
+            d_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
+            d_a_loss = -torch.min(d_a_surr1, d_a_surr2)
 
-        td_error_r = td_error.item()
+            # Update Value Layer(Critic)
+            critic_loss = self.loss_func(value_of_states, td_target)
 
-        return td_error_r
+            loss = c_a_loss + d_a_loss + critic_loss
 
-    def learn_c_a(self, b_s, b_discrete_a):
+            # take gradient step
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
-
-        self.optimizer_c_a.zero_grad()
-        c_a_loss.backward()
-        self.optimizer_c_a.step()
-
-        return c_a_loss.item()
-
-    def learn_d_a(self, b_s, b_discrete_a, b_r, b_s_):
-        q_eval = self.Discrete_Actor.forward(b_s).gather(1,
-                                                         b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
-        q_next = self.Discrete_Actor_.forward(b_s_).detach()  # detach from graph, don't backpropagate，因为target网络不需要训练
-        # 下一状态s的eval_net值
-        q_eval_next = self.Discrete_Actor.forward(b_s_)
-        max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
-        select_q_next = q_next.gather(1, max_b_a_next)
-
-        q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
-
-        # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target)
-
-        self.optimizer_d_a.zero_grad()
-        d_a_loss.backward()
-        self.optimizer_d_a.step()
-
-        return d_a_loss.item()
+        self.hybrid_actor_critic_old.load_state_dict(self.hybrid_actor_critic.state_dict())
 
 
-class OrnsteinUhlenbeckNoise:
-    def __init__(self, mu):
-        self.theta, self.dt, self.sigma = 0.15, 0.01, 0.2
-        self.mu = mu
-        self.x_prev = np.zeros_like(self.mu)
 
-    def __call__(self):
-        x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + \
-            self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
-        self.x_prev = x
-        return x
