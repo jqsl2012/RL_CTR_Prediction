@@ -82,7 +82,7 @@ class Hybrid_Actor_Critic(nn.Module):
             raise ModuleNotFoundError
 
 
-class Hybrid_RL_Model():
+class Hybrid_PPO_Model():
     def __init__(
             self,
             feature_nums,
@@ -115,6 +115,7 @@ class Hybrid_RL_Model():
         self.action_std = 0.5
         self.k_epochs = k_epochs
         self.eps_clip = eps_clip
+        self.lamda = 0.95 # GAE泛化估计
 
         self.memory_counter = 0
 
@@ -212,14 +213,14 @@ class Hybrid_RL_Model():
 
         return actions_logprobs, action_entropy
 
-    def choose_best_continuous_action(self, state):
+    def choose_best_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
             ensemble_c_actions = self.hybrid_actor_critic.forward(state, 'c_a')
 
         return ensemble_c_actions
 
-    def choose_best_discrete_action(self, state):
+    def choose_best_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
             action_values = torch.softmax(self.hybrid_actor_critic.forward(state))
@@ -249,7 +250,13 @@ class Hybrid_RL_Model():
             value_of_states = self.evaluate_v(states) # 当前状态的V值
 
             td_target = rewards + self.gamma * value_of_states_ # 也可以采用累计折扣奖励
-            advantages = td_target - value_of_states
+            deltas = td_target - value_of_states
+
+            advantages = torch.zeros(size=[len(deltas), 1]).to(self.device)
+            advantage = 0.0
+            for i, k in enumerate(reversed(range(deltas))):
+                advantage = self.gamma * self.lamda * advantage + deltas[k, :].item()
+                advantages[i, :] = advantage
 
             # Normalizing the rewards
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
