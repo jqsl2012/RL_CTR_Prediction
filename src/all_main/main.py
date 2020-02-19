@@ -364,7 +364,7 @@ def submission(ddqn_model, ddpg_for_pg_model, model_dict, embedding_layer, data_
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
-            
+
             final_actions = torch.cat([final_actions, actions], dim=0)
             final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
 
@@ -398,12 +398,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
     FM.load_state_dict(FM_pretrain_params)
     FM.eval()
-    
+
     AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
     AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
     AFM.load_state_dict(AFM_pretrain_params)
     AFM.eval()
-    
+
     WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
     WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
     WandD.load_state_dict(WandD_pretrain_params)

@@ -181,8 +181,9 @@ class Hybrid_RL_Model():
         action_dist = MultivariateNormal(action_mean, action_std)
 
         action_logprobs = action_dist.log_prob(action)
+        action_entropy = action_dist.entropy()
 
-        return action_logprobs
+        return action_logprobs, action_entropy
 
     def choose_d_a(self, state):
         self.hybrid_actor_critic.eval()
@@ -207,8 +208,9 @@ class Hybrid_RL_Model():
         action_dist = Categorical(action_values)
 
         actions_logprobs = action_dist.log_prob(action)
+        action_entropy = action_dist.entropy()
 
-        return actions_logprobs
+        return actions_logprobs, action_entropy
 
     def choose_best_continuous_action(self, state):
         self.hybrid_actor_critic.eval()
@@ -241,41 +243,47 @@ class Hybrid_RL_Model():
         old_d_a_logprobs = self.memory_d_logprobs
         rewards = self.memory_reward
 
+        return_loss = 0
         for _ in range(self.k_epochs):
             value_of_states_ = self.evaluate_v(states_) # 下一状态的V值
             value_of_states = self.evaluate_v(states) # 当前状态的V值
 
-            td_target = rewards + self.gamma * value_of_states_
+            td_target = rewards + self.gamma * value_of_states_ # 也可以采用累计折扣奖励
             advantages = td_target - value_of_states
 
             # Normalizing the rewards
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
             # Update Continuous Actor
-            c_a_logprobs = self.evaluate_c_a(states, old_c_a)
+            c_a_logprobs, c_a_entropy = self.evaluate_c_a(states, old_c_a)
             ratios = torch.exp(c_a_logprobs - old_c_a_logprobs)
             c_a_surr1 = ratios * advantages
             c_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-            c_a_loss = -torch.min(c_a_surr1, c_a_surr2)
+            c_a_loss = -torch.min(c_a_surr1, c_a_surr2).mean()
+            c_a_entropy_loss = 0.01 * c_a_entropy # A2C中提到的损失，主要为了控制生成动作分布
 
             # Update Discrete Actor
-            d_a_logprobs = self.evaluate_d_a(states, old_d_a)
+            d_a_logprobs, d_a_entropy = self.evaluate_d_a(states, old_d_a)
             ratios = torch.exp(d_a_logprobs - old_d_a_logprobs)
             d_a_surr1 = ratios * advantages
             d_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-            d_a_loss = -torch.min(d_a_surr1, d_a_surr2)
+            d_a_loss = -torch.min(d_a_surr1, d_a_surr2).mean()
+            d_a_entropy_loss = 0.01 * d_a_entropy
 
             # Update Value Layer(Critic)
             critic_loss = self.loss_func(value_of_states, td_target)
 
-            loss = c_a_loss + d_a_loss + critic_loss
+            loss = c_a_loss - c_a_entropy_loss + d_a_loss - d_a_entropy_loss + 0.5 * critic_loss
 
             # take gradient step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
+            return_loss = loss.item()
+
         self.hybrid_actor_critic_old.load_state_dict(self.hybrid_actor_critic.state_dict())
 
+        return return_loss
 
 
