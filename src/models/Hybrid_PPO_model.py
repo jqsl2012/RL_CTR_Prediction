@@ -47,6 +47,8 @@ class Hybrid_Actor_Critic(nn.Module):
         # Discrete_Actor
         self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1)
 
+        self.action_std = 0.5
+
     def state_value(self, input):
         mlp_out = self.mlp(input)
         state_value = self.Critic(mlp_out)
@@ -65,6 +67,27 @@ class Hybrid_Actor_Critic(nn.Module):
 
         return torch.softmax(d_actions, dim=-1)
 
+    def evaluate(self, input, c_a, d_a):
+        state_value = self.hybrid_actor_critic.state_value(input)
+
+        c_action_mean = self.hybrid_actor_critic.c_action(input)
+
+        c_action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
+        c_action_dist = MultivariateNormal(c_action_mean, c_action_std)
+
+        c_action_logprobs = c_action_dist.log_prob(c_a).view(-1, )
+
+        c_action_entropy = c_action_dist.entropy().view(-1, 1)
+
+        d_action_values = self.hybrid_actor_critic.d_action(input)
+
+        d_action_dist = Categorical(d_action_values)
+
+        d_actions_logprobs = d_action_dist.log_prob(d_a.squeeze(1)).view(-1, 1)
+
+        d_action_entropy = d_action_dist.entropy().view(-1, 1)
+
+        return state_value, c_action_logprobs, c_action_entropy, d_actions_logprobs, d_action_entropy
 
 class Hybrid_PPO_Model():
     def __init__(
@@ -138,9 +161,6 @@ class Hybrid_PPO_Model():
 
         # self.memory_counter += transition_lens
 
-    def evaluate_v(self, state):
-        return self.hybrid_actor_critic.state_value(state)
-
     def choose_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
@@ -159,18 +179,6 @@ class Hybrid_PPO_Model():
 
         return actions, actions_logprobs, ensemble_c_actions
 
-    def evaluate_c_a(self, state, action):
-        action_mean = self.hybrid_actor_critic.c_action(state)
-
-        action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
-        action_dist = MultivariateNormal(action_mean, action_std)
-
-        action_logprobs = action_dist.log_prob(action)
-
-        action_entropy = action_dist.entropy()
-
-        return action_logprobs.view(-1, 1), action_entropy.view(-1, 1)
-
     def choose_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
@@ -186,17 +194,6 @@ class Hybrid_PPO_Model():
         self.hybrid_actor_critic.train()
 
         return actions.view(-1, 1), actions_logprobs, ensemble_d_actions.view(-1, 1)
-
-    def evaluate_d_a(self, state, action):
-        action_values = self.hybrid_actor_critic.d_action(state)
-
-        action_dist = Categorical(action_values)
-
-        actions_logprobs = action_dist.log_prob(action.squeeze(1))
-
-        action_entropy = action_dist.entropy()
-
-        return actions_logprobs.view(-1, 1), action_entropy.view(-1, 1)
 
     def choose_best_c_a(self, state):
         self.hybrid_actor_critic.eval()
@@ -229,8 +226,8 @@ class Hybrid_PPO_Model():
         return_loss = 0
         # print('1', datetime.datetime.now())
 
-        value_of_states_ = self.evaluate_v(states_)  # 下一状态的V值
-        value_of_states = self.evaluate_v(states)  # 当前状态的V值
+        value_of_states_ = self.hybrid_actor_critic.evaluate(states_, old_c_a, old_d_a)  # 下一状态的V值
+        value_of_states = self.hybrid_actor_critic.evaluate(states, old_c_a, old_d_a)  # 当前状态的V值
 
         td_target = rewards + self.gamma * value_of_states_  # 也可以采用累计折扣奖励
         deltas = td_target - value_of_states
@@ -248,32 +245,31 @@ class Hybrid_PPO_Model():
         for _ in range(self.k_epochs):
 
             # Update Continuous Actor
-            c_a_logprobs, c_a_entropy = self.evaluate_c_a(states, old_c_a)
+            state_values, c_a_logprobs, c_a_entropy, d_a_logprobs, d_a_entropy = self.hybrid_actor_critic.evaluate(states, old_c_a, old_d_a)
             ratios = torch.exp(c_a_logprobs - old_c_a_logprobs)
 
             c_a_surr1 = ratios * advantages
             c_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-            c_a_loss = -torch.min(c_a_surr1, c_a_surr2).mean()
-            c_a_entropy_loss = 0.01 * c_a_entropy.mean() # A2C中提到的损失，主要为了控制生成动作分布
+            c_a_loss = -torch.min(c_a_surr1, c_a_surr2)
+            c_a_entropy_loss = 0.01 * c_a_entropy # A2C中提到的损失，主要为了控制生成动作分布
 
             # Update Discrete Actor
-            d_a_logprobs, d_a_entropy = self.evaluate_d_a(states, old_d_a)
             ratios = torch.exp(d_a_logprobs - old_d_a_logprobs)
             d_a_surr1 = ratios * advantages
             d_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-            d_a_loss = -torch.min(d_a_surr1, d_a_surr2).mean()
-            d_a_entropy_loss = 0.01 * d_a_entropy.mean()
+            d_a_loss = -torch.min(d_a_surr1, d_a_surr2)
+            d_a_entropy_loss = 0.01 * d_a_entropy
 
             # Update Value Layer(Critic)
-            critic_loss = self.loss_func(value_of_states, td_target)
+            critic_loss = advantages
 
             loss = c_a_loss - c_a_entropy_loss + d_a_loss - d_a_entropy_loss + 0.5 * critic_loss
             print('2', datetime.datetime.now())
 
-            # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
+            # print(self.hybrid_actor_critic.Conti nuous_Actor[0].weight)
             # take gradient step
             self.optimizer.zero_grad()
-            loss.backward()
+            loss.mean().backward()
             self.optimizer.step()
             # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             print('3', datetime.datetime.now())
