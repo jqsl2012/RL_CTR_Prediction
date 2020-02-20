@@ -25,8 +25,8 @@ class Hybrid_Actor_Critic(nn.Module):
 
         neuron_nums = [300, 300, 300]
 
-        # Critic
-        self.Critic = nn.Sequential(
+        # MLP
+        self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
             nn.ReLU(),
@@ -36,45 +36,34 @@ class Hybrid_Actor_Critic(nn.Module):
             nn.Linear(neuron_nums[1], neuron_nums[2]),
             nn.BatchNorm1d(neuron_nums[2]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[2], 1)
         )
+
+        # Critic
+        self.Critic = nn.Linear(neuron_nums[2], 1)
 
         # Continuous_Actor
-        self.Continuous_Actor = nn.Sequential(
-            nn.Linear(self.input_dims, neuron_nums[0]),
-            nn.BatchNorm1d(neuron_nums[0]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[0], neuron_nums[1]),
-            nn.BatchNorm1d(neuron_nums[1]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], action_nums),
-            nn.Softmax(dim=-1)
-        )
+        self.Continuous_Actor = nn.Linear(neuron_nums[2], action_nums),
 
         # Discrete_Actor
-        self.Discrete_Actor = nn.Sequential(
-            nn.Linear(self.input_dims, neuron_nums[0]),
-            nn.BatchNorm1d(neuron_nums[0]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[0], neuron_nums[1]),
-            nn.BatchNorm1d(neuron_nums[1]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], action_nums - 1),
-            nn.Softmax(dim=-1)
-        )
+        self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1),
 
-    def forward(self, input):
-        state_value = self.Critic(input)
-        c_action = self.Continuous_Actor(input)  # no softmax
-        d_action = self.Discrete_Actor(input) # no softmax
+    def state_value(self, input):
+        mlp_out = self.mlp(input)
+        state_value = self.Critic(mlp_out)
 
-        return state_value, c_action, d_action
+        return state_value
+
+    def c_action(self, input):
+        mlp_out = self.mlp(input)
+        c_actions = self.Continuous_Actor(mlp_out)
+
+        return torch.softmax(c_actions, dim=-1)
+
+    def d_action(self, input):
+        mlp_out = self.mlp(input)
+        d_actions = self.Discrete_Actor(mlp_out)
+
+        return torch.softmax(d_actions, dim=-1)
 
 
 class Hybrid_PPO_Model():
@@ -128,9 +117,7 @@ class Hybrid_PPO_Model():
         self.hybrid_actor_critic_old = Hybrid_Actor_Critic(self.input_dims, self.action_nums).to(self.device)
 
         # 优化器
-        self.optimizer_C = torch.optim.Adam(self.hybrid_actor_critic.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
-        self.optimizer_C_A = torch.optim.Adam(self.hybrid_actor_critic.Continuous_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
-        self.optimizer_D_A = torch.optim.Adam(self.hybrid_actor_critic.Discrete_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
+        self.optimizer = torch.optim.Adam(self.hybrid_actor_critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
@@ -152,13 +139,12 @@ class Hybrid_PPO_Model():
         # self.memory_counter += transition_lens
 
     def evaluate_v(self, state):
-        state_value, c_action, d_action = self.hybrid_actor_critic.forward(state)
-        return state_value
+        return self.hybrid_actor_critic.state_value(state)
 
     def choose_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            state_value, action_mean, d_action = self.hybrid_actor_critic.forward(state)
+            action_mean = self.hybrid_actor_critic.c_action(state)
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
@@ -174,7 +160,7 @@ class Hybrid_PPO_Model():
         return actions, actions_logprobs, ensemble_c_actions
 
     def evaluate_c_a(self, state, action):
-        state_value, action_mean, d_action = self.hybrid_actor_critic.forward(state)
+        action_mean = self.hybrid_actor_critic.c_action(state)
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
@@ -188,7 +174,7 @@ class Hybrid_PPO_Model():
     def choose_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            state_value, action_mean, action_values = self.hybrid_actor_critic.forward(state)
+            action_values = self.hybrid_actor_critic.d_action(state)
 
         action_dist = Categorical(action_values)
         actions = action_dist.sample() # 分布产生的结果
@@ -202,7 +188,7 @@ class Hybrid_PPO_Model():
         return actions.view(-1, 1), actions_logprobs, ensemble_d_actions.view(-1, 1)
 
     def evaluate_d_a(self, state, action):
-        state_value, action_mean, action_values = self.hybrid_actor_critic.forward(state)
+        action_values = self.hybrid_actor_critic.d_action(state)
 
         action_dist = Categorical(action_values)
 
@@ -215,14 +201,14 @@ class Hybrid_PPO_Model():
     def choose_best_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            state_value, ensemble_c_actions, action_values = self.hybrid_actor_critic.forward(state)
+            ensemble_c_actions = self.hybrid_actor_critic.c_action(state)
 
         return ensemble_c_actions
 
     def choose_best_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            state_value, ensemble_c_actions, action_values = self.hybrid_actor_critic.forward(state)
+            action_values = self.hybrid_actor_critic.d_action(state)
 
         ensemble_d_actions = torch.argsort(-action_values)[:, 0] + 2
 
@@ -286,17 +272,9 @@ class Hybrid_PPO_Model():
 
             # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             # take gradient step
-            self.optimizer_C.zero_grad()
+            self.optimizer.zero_grad()
             loss.backward()
-            self.optimizer_C.step()
-
-            self.optimizer_C_A.zero_grad()
-            loss.backward()
-            self.optimizer_C_A.step()
-
-            self.optimizer_D_A.zero_grad()
-            loss.backward()
-            self.optimizer_D_A.step()
+            self.optimizer.step()
             # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             print('3', datetime.datetime.now())
 
