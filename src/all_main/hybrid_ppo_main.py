@@ -163,22 +163,22 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         y_preds, prob_weights_new, rewards = \
             generate_preds(model_dict, features, ensemble_d_a, ensemble_prob_weights, labels, device, mode='train')
 
-        targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
-        predicts.extend(y_preds.tolist())
+        # targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
+        # predicts.extend(y_preds.tolist())
 
         rl_model.store_memory(features, c_a, c_logprobs, d_a, d_logprobs, rewards)
         states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards = rl_model.memory()
         loss = rl_model.learn(embedding_layer.forward(states), embedding_layer.forward(states_), old_c_a,
                               old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards)
 
-        total_loss += loss  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        total_loss = loss  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
         log_intervals += 1
 
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
+    return total_loss, total_rewards / log_intervals, 1
 
 
 def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
