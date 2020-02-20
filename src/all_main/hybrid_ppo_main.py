@@ -192,7 +192,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions = rl_model.choose_best_d_a(embedding_vectors)
-            prob_weights = rl_model.choose_best_c_a(embedding_vectors, actions.float())
+            prob_weights = rl_model.choose_best_c_a(embedding_vectors)
 
             # x = torch.argsort(prob_weights)[:, 0]
             # print(len((actions == 2).nonzero()), len((x == 3  ).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
@@ -221,7 +221,7 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions = rl_model.choose_best_d_a(embedding_vectors)
-            prob_weights = rl_model.choose_best_c_a(embedding_vectors, actions.float())
+            prob_weights = rl_model.choose_best_c_a(embedding_vectors)
             y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 

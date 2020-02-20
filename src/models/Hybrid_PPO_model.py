@@ -256,22 +256,25 @@ class Hybrid_PPO_Model():
 
     def learn(self, states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards):
         return_loss = 0
+        # print('1', datetime.datetime.now())
+
+        value_of_states_ = self.evaluate_v(states_)  # 下一状态的V值
+        value_of_states = self.evaluate_v(states)  # 当前状态的V值
+
+        td_target = rewards + self.gamma * value_of_states_  # 也可以采用累计折扣奖励
+        deltas = td_target - value_of_states
+
+        advantages = torch.zeros(size=[len(deltas), 1]).to(self.device)
+        advantage = 0.0
+        for i, deltas in enumerate(reversed(deltas)):
+            advantage = self.gamma * self.lamda * advantage + deltas.item()
+            advantages[i, :] = advantage
+
+        # Normalizing the rewards
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
+        # print('4', datetime.datetime.now())
 
         for _ in range(self.k_epochs):
-            value_of_states_ = self.evaluate_v(states_) # 下一状态的V值
-            value_of_states = self.evaluate_v(states) # 当前状态的V值
-
-            td_target = rewards + self.gamma * value_of_states_ # 也可以采用累计折扣奖励
-            deltas = td_target - value_of_states
-
-            advantages = torch.zeros(size=[len(deltas), 1]).to(self.device)
-            advantage = 0.0
-            for i, deltas in enumerate(reversed(deltas)):
-                advantage = self.gamma * self.lamda * advantage + deltas.item()
-                advantages[i, :] = advantage
-
-            # Normalizing the rewards
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
             # Update Continuous Actor
             c_a_logprobs, c_a_entropy = self.evaluate_c_a(states, old_c_a)
@@ -293,13 +296,16 @@ class Hybrid_PPO_Model():
             # Update Value Layer(Critic)
             critic_loss = self.loss_func(value_of_states, td_target)
 
-            loss = c_a_loss - c_a_entropy_loss
-            print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
+            loss = c_a_loss - c_a_entropy_loss + d_a_loss - d_a_entropy_loss + 0.5 * critic_loss
+            print('2', datetime.datetime.now())
+
+            # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             # take gradient step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-            print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
+            # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
+            print('3', datetime.datetime.now())
 
             return_loss = loss.item()
 
