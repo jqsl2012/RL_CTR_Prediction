@@ -47,20 +47,24 @@ class Hybrid_Actor_Critic(nn.Module):
         # Discrete_Actor
         self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1),
 
+    def generate_mlp(self, input):
+        return self.mlp(input)
+
     def state_value(self, input):
-        mlp_out = self.mlp(input)
+        mlp_out = self.generate_mlp(input)
         state_value = self.Critic(mlp_out)
 
         return state_value
 
     def c_action(self, input):
-        mlp_out = self.mlp(input)
+        # mlp_out = self.generate_mlp(input)
         c_actions = self.Continuous_Actor(mlp_out)
 
         return torch.softmax(c_actions, dim=-1)
 
     def d_action(self, input):
-        mlp_out = self.mlp(input)
+        mlp_out = self.generate_mlp(input)
+        print(mlp_out)
         d_actions = self.Discrete_Actor(mlp_out)
 
         return torch.softmax(d_actions, dim=-1)
