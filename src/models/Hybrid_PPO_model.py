@@ -128,7 +128,9 @@ class Hybrid_PPO_Model():
         self.hybrid_actor_critic_old = Hybrid_Actor_Critic(self.input_dims, self.action_nums).to(self.device)
 
         # 优化器
-        self.optimizer = torch.optim.Adam(self.hybrid_actor_critic.parameters(), lr=self.lr_A, weight_decay=1e-5)
+        self.optimizer_C = torch.optim.Adam(self.hybrid_actor_critic.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer_C_A = torch.optim.Adam(self.hybrid_actor_critic.Continuous_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
+        self.optimizer_D_A = torch.optim.Adam(self.hybrid_actor_critic.Discrete_Actor.parameters(), lr=self.lr_A, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
@@ -226,12 +228,6 @@ class Hybrid_PPO_Model():
 
         return ensemble_d_actions.view(-1, 1)
 
-    def soft_update(self, net, net_target):
-        for param_target, param in zip(net_target.parameters(), net.parameters()):
-            param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
-
-            # 对每一轮的奖励值进行累计折扣及归一化处理
-
     def memory(self):
         states = self.memory_state.long()
         states_ = self.memory_state.long()
@@ -290,9 +286,17 @@ class Hybrid_PPO_Model():
 
             # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             # take gradient step
-            self.optimizer.zero_grad()
+            self.optimizer_C.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            self.optimizer_C.step()
+
+            self.optimizer_C_A.zero_grad()
+            loss.backward()
+            self.optimizer_C_A.step()
+
+            self.optimizer_D_A.zero_grad()
+            loss.backward()
+            self.optimizer_D_A.step()
             # print(self.hybrid_actor_critic.Continuous_Actor[0].weight)
             print('3', datetime.datetime.now())
 
