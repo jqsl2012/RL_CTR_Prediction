@@ -17,60 +17,7 @@ def setup_seed(seed):
 
 # 设置随机数种子
 setup_seed(1)
-
-class Hybrid_Actor_Critic(nn.Module):
-    def __init__(self, input_dims, action_nums):
-        super(Hybrid_Actor_Critic, self).__init__()
-        self.input_dims = input_dims
-
-        neuron_nums = [300, 300, 300]
-
-        # MLP
-        self.mlp = nn.Sequential(
-            nn.Linear(self.input_dims, neuron_nums[0]),
-            nn.BatchNorm1d(neuron_nums[0]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[0], neuron_nums[1]),
-            nn.BatchNorm1d(neuron_nums[1]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-        )
-
-        # Critic
-        self.Critic = nn.Linear(neuron_nums[2], 1)
-
-        # Continuous_Actor
-        self.Continuous_Actor = nn.Linear(neuron_nums[2], action_nums),
-
-        # Discrete_Actor
-        self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1),
-
-    def generate_mlp(self, input):
-        return self.mlp(input)
-
-    def state_value(self, input):
-        mlp_out = self.generate_mlp(input)
-        state_value = self.Critic(mlp_out)
-
-        return state_value
-
-    def c_action(self, input):
-        # mlp_out = self.generate_mlp(input)
-        c_actions = self.Continuous_Actor(mlp_out)
-
-        return torch.softmax(c_actions, dim=-1)
-
-    def d_action(self, input):
-        mlp_out = self.generate_mlp(input)
-        print(mlp_out)
-        d_actions = self.Discrete_Actor(mlp_out)
-
-        return torch.softmax(d_actions, dim=-1)
-
-
-class Hybrid_PPO_Model():
+class Hybrid_PPO_Model(nn.Module):
     def __init__(
             self,
             feature_nums,
@@ -88,6 +35,7 @@ class Hybrid_PPO_Model():
             eps_clip=0.2, # clip parameter for ppo
             device='cuda:0',
     ):
+        super(Hybrid_PPO_Model, self).__init__()
         self.feature_nums = feature_nums
         self.field_nums = field_nums
         self.action_nums = action_nums
@@ -116,14 +64,51 @@ class Hybrid_PPO_Model():
         self.memory_d_logprobs = torch.zeros(size=[self.memory_size, 1]).to(self.device)
         self.memory_reward = torch.zeros(size=[self.memory_size, 1]).to(self.device)
 
-        self.hybrid_actor_critic = Hybrid_Actor_Critic(self.input_dims, self.action_nums).to(self.device)
+        self.loss_func = nn.MSELoss(reduction='mean')
 
-        self.hybrid_actor_critic_old = Hybrid_Actor_Critic(self.input_dims, self.action_nums).to(self.device)
+        neuron_nums = [300, 300, 300]
+        # MLP
+        self.mlp = nn.Sequential(
+            nn.Linear(self.input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+        )
+
+        # Critic
+        self.Critic = nn.Linear(neuron_nums[2], 1)
+
+        # Continuous_Actor
+        self.Continuous_Actor = nn.Linear(neuron_nums[2], action_nums)
+
+        # Discrete_Actor
+        self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1)
 
         # 优化器
-        self.optimizer = torch.optim.Adam(self.hybrid_actor_critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
-        self.loss_func = nn.MSELoss(reduction='mean')
+    def state_value(self, input):
+        mlp_out = self.mlp(input)
+        state_value = self.Critic(mlp_out)
+
+        return state_value
+
+    def c_action(self, input):
+        mlp_out = self.mlp(input)
+        c_actions = self.Continuous_Actor(mlp_out)
+
+        return torch.softmax(c_actions, dim=-1)
+
+    def d_action(self, input):
+        mlp_out = self.mlp(input)
+        d_actions = self.Discrete_Actor(mlp_out)
+
+        return torch.softmax(d_actions, dim=-1)
 
     def store_memory(self, states, c_a, c_logprobs, d_a, d_logprobs, rewards):
         transition_lens = len(states)
@@ -143,12 +128,11 @@ class Hybrid_PPO_Model():
         # self.memory_counter += transition_lens
 
     def evaluate_v(self, state):
-        return self.hybrid_actor_critic.state_value(state)
+        return self.state_value(state)
 
     def choose_c_a(self, state):
-        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_mean = self.hybrid_actor_critic.c_action(state)
+            action_mean = self.c_action(state)
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
@@ -159,12 +143,10 @@ class Hybrid_PPO_Model():
 
         ensemble_c_actions = torch.softmax(actions, dim=-1) # 模型所需的动作
 
-        self.hybrid_actor_critic.train()
-
         return actions, actions_logprobs, ensemble_c_actions
 
     def evaluate_c_a(self, state, action):
-        action_mean = self.hybrid_actor_critic.c_action(state)
+        action_mean = self.c_action(state)
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
@@ -176,9 +158,8 @@ class Hybrid_PPO_Model():
         return action_logprobs.view(-1, 1), action_entropy.view(-1, 1)
 
     def choose_d_a(self, state):
-        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.hybrid_actor_critic.d_action(state)
+            action_values = self.d_action(state)
 
         action_dist = Categorical(action_values)
         actions = action_dist.sample() # 分布产生的结果
@@ -192,7 +173,7 @@ class Hybrid_PPO_Model():
         return actions.view(-1, 1), actions_logprobs, ensemble_d_actions.view(-1, 1)
 
     def evaluate_d_a(self, state, action):
-        action_values = self.hybrid_actor_critic.d_action(state)
+        action_values = self.d_action(state)
 
         action_dist = Categorical(action_values)
 
@@ -203,16 +184,14 @@ class Hybrid_PPO_Model():
         return actions_logprobs.view(-1, 1), action_entropy.view(-1, 1)
 
     def choose_best_c_a(self, state):
-        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            ensemble_c_actions = self.hybrid_actor_critic.c_action(state)
+            ensemble_c_actions = self.c_action(state)
 
         return ensemble_c_actions
 
     def choose_best_d_a(self, state):
-        self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.hybrid_actor_critic.d_action(state)
+            action_values = self.d_action(state)
 
         ensemble_d_actions = torch.argsort(-action_values)[:, 0] + 2
 
