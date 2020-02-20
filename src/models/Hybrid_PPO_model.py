@@ -69,23 +69,12 @@ class Hybrid_Actor_Critic(nn.Module):
             nn.Softmax(dim=-1)
         )
 
-    def forward(self):
-        raise NotImplementedError
-
-    def c_action(self, input, type):
-        c_action = self.Continuous_Actor(input)  # no softmax
-
-        return c_action
-
-    def state_value(self, input, type):
+    def forward(self, input):
         state_value = self.Critic(input)
-
-        return state_value
-
-    def d_action(self, input ,type):
+        c_action = self.Continuous_Actor(input)  # no softmax
         d_action = self.Discrete_Actor(input) # no softmax
 
-        return d_action
+        return state_value, c_action, d_action
 
 
 class Hybrid_PPO_Model():
@@ -161,13 +150,13 @@ class Hybrid_PPO_Model():
         # self.memory_counter += transition_lens
 
     def evaluate_v(self, state):
-        state_value = self.hybrid_actor_critic.state_value(state, 'critic')
+        state_value, c_action, d_action = self.hybrid_actor_critic.forward(state)
         return state_value
 
     def choose_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_mean = self.hybrid_actor_critic.c_action(state, 'c_a')
+            state_value, action_mean, d_action = self.hybrid_actor_critic.forward(state)
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
@@ -183,7 +172,7 @@ class Hybrid_PPO_Model():
         return actions, actions_logprobs, ensemble_c_actions
 
     def evaluate_c_a(self, state, action):
-        action_mean = self.hybrid_actor_critic.c_action(state, 'c_a')
+        state_value, action_mean, d_action = self.hybrid_actor_critic.forward(state)
 
         action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
         action_dist = MultivariateNormal(action_mean, action_std)
@@ -197,7 +186,7 @@ class Hybrid_PPO_Model():
     def choose_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.hybrid_actor_critic.d_action(state, 'd_a')
+            state_value, action_mean, action_values = self.hybrid_actor_critic.forward(state)
 
         action_dist = Categorical(action_values)
         actions = action_dist.sample() # 分布产生的结果
@@ -211,7 +200,7 @@ class Hybrid_PPO_Model():
         return actions.view(-1, 1), actions_logprobs, ensemble_d_actions.view(-1, 1)
 
     def evaluate_d_a(self, state, action):
-        action_values = self.hybrid_actor_critic.d_action(state, 'd_a')
+        state_value, action_mean, action_values = self.hybrid_actor_critic.forward(state)
 
         action_dist = Categorical(action_values)
 
@@ -224,14 +213,14 @@ class Hybrid_PPO_Model():
     def choose_best_c_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            ensemble_c_actions = self.hybrid_actor_critic.c_action(state, 'c_a')
+            state_value, ensemble_c_actions, action_values = self.hybrid_actor_critic.forward(state)
 
         return ensemble_c_actions
 
     def choose_best_d_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.hybrid_actor_critic.d_action(state, 'd_a')
+            state_value, ensemble_c_actions, action_values = self.hybrid_actor_critic.forward(state)
 
         ensemble_d_actions = torch.argsort(-action_values)[:, 0] + 2
 
