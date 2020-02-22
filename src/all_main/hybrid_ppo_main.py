@@ -26,11 +26,11 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, lr_step_size, memory_size, device, campaign_id):
+def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, lr_lamda, memory_size, device, campaign_id):
     RL_model = hybrid_ppo_model.Hybrid_PPO_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
                                                campaign_id=campaign_id, batch_size=batch_size // 16,
-                                               step_size=lr_step_size,
+                                               lr_lamda=lr_lamda,
                                                memory_size=batch_size, device=device)
     return RL_model
 
@@ -291,9 +291,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
 
     model_dict_len = len(model_dict)
     memory_size = 1000000
-    lr_step_size = round(len(train_data) / batch_size)
+
+    init_lr = 1e-2
+    end_lr = 1e-4
+    lr_lamda = (init_lr - end_lr) / epoch
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size,
-                         lr_step_size, memory_size, device, campaign_id)
+                         lr_lamda, memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
     embedding_layer.load_embedding(FM_pretrain_params)
@@ -315,6 +318,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
         train_average_loss, train_average_rewards = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
+        rl_model.lr_scheduler.step(epoch_i)
         rewards_records.append(train_average_rewards)
 
         auc, valid_loss = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,

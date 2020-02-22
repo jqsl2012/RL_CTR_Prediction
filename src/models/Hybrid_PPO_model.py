@@ -106,7 +106,7 @@ class Hybrid_PPO_Model():
             campaign_id='1458',
             learning_rate=1e-3,
             reward_decay=1,
-            step_size=1506,
+            lr_lamda=0.01,
             memory_size=4096000, # 设置为DataLoader的batch_size * n
             batch_size=256,
             tau=0.005,  # for target network soft update
@@ -121,7 +121,7 @@ class Hybrid_PPO_Model():
         self.lr = learning_rate
         self.gamma = reward_decay
         self.latent_dims = latent_dims
-        self.step_size = step_size
+        self.lr_lamda = lr_lamda
         self.memory_size = memory_size
         self.batch_size = batch_size
         self.tau = tau
@@ -148,7 +148,7 @@ class Hybrid_PPO_Model():
 
         # 优化器
         self.optimizer = torch.optim.Adam(self.hybrid_actor_critic.parameters(), lr=self.lr, weight_decay=1e-5)
-        scheduler_1 = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.step_size, gamma=0.1)
+        self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda epoch: 1/(epoch+1))
 
         self.loss_func = nn.MSELoss()
 
@@ -247,6 +247,7 @@ class Hybrid_PPO_Model():
             # print(self.hybrid_actor_critic.Critic.weight)
             # print('4', datetime.datetime.now())
             print("第个epoch的学习率：%f" % (self.optimizer.param_groups[0]['lr']))
+
 
             return_loss = loss.mean().item()
         # print('5', datetime.datetime.now())
