@@ -26,9 +26,9 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, memory_size, device, campaign_id):
+def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size, memory_size, device, campaign_id):
     RL_model = hybrid_rl_model.Hybrid_RL_Model(feature_nums, field_nums, latent_dims,
-                                               action_nums=action_nums,
+                                               action_nums=action_nums, lr_C_A=init_lr_a, lr_D_A=init_lr_a, lr_C=init_lr_c,
                                                campaign_id=campaign_id, batch_size=batch_size // 16,
                                                memory_size=memory_size, device=device)
     return RL_model
@@ -243,7 +243,7 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
     return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
 
-def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, batch_size, device, save_param_dir):
+def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr_a, end_lr_a, init_lr_c, end_lr_c, epoch, batch_size, device, save_param_dir):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
@@ -313,7 +313,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     model_dict_len = len(model_dict)
 
     memory_size = 1000000
-    rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size,
+    rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
                                               memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
@@ -336,6 +336,10 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
         train_average_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
+        rl_model.optimizer_c.param_groups[0]['lr'] = init_lr_c - epoch_i * (init_lr_c - end_lr_c) / epoch
+        rl_model.optimizer_c_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / epoch
+        rl_model.optimizer_d_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / epoch
+
         rewards_records.append(train_average_rewards)
 
         auc, valid_loss = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
@@ -414,7 +418,10 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=500)
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--init_lr_a', type=float, default=1e-3)
+    parser.add_argument('--end_lr_a', type=float, default=1e-4)
+    parser.add_argument('--init_lr_c', type=float, default=1e-2)
+    parser.add_argument('--end_lr_c', type=float, default=1e-3)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
@@ -432,6 +439,10 @@ if __name__ == '__main__':
         args.campaign_id,
         args.latent_dims,
         args.model_name,
+        args.init_lr_a,
+        args.end_lr_a,
+        args.init_lr_c,
+        args.end_lr_c,
         args.epoch,
         args.batch_size,
         args.device,
