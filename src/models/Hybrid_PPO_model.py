@@ -59,12 +59,12 @@ class Hybrid_Actor_Critic(nn.Module):
         c_action_logprobs = c_action_dist.log_prob(c_actions)
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        return_c_as = (c_actions.view(-1, 1), c_action_logprobs.view(-1, 1), ensemble_c_actions.view(-1, 1))
+        return_c_as = (c_actions, c_action_logprobs, ensemble_c_actions)
 
         d_actions = torch.softmax(self.Discrete_Actor(mlp_out), dim=-1)
         d_action_dist = Categorical(d_actions)
         d_actions = d_action_dist.sample()
-        d_action_logprobs = d_actions.log_prob(d_actions)
+        d_action_logprobs = d_action_dist.log_prob(d_actions)
         ensemble_d_actions = d_actions + 2
 
         return_d_as = (d_actions.view(-1, 1), d_action_logprobs.view(-1, 1), ensemble_d_actions.view(-1, 1))
@@ -86,8 +86,8 @@ class Hybrid_Actor_Critic(nn.Module):
 
         c_action_means = torch.softmax(self.Continuous_Actor(mlp_out), dim=-1)
         c_action_dist = Normal(c_action_means, F.softplus(self.action_std))
-        c_action_logprobs = c_action_dist.log_prob(c_a).view(-1, 1)
-        c_action_entropy = c_action_dist.entropy().view(-1, 1)
+        c_action_logprobs = c_action_dist.log_prob(c_a)
+        c_action_entropy = c_action_dist.entropy()
 
         d_action_values = self.Discrete_Actor(mlp_out)
         d_action_dist = Categorical(d_action_values)
@@ -135,7 +135,7 @@ class Hybrid_PPO_Model():
 
         self.memory_state = torch.zeros(size=[self.memory_size, self.field_nums]).to(self.device)
         self.memory_c_a = torch.zeros(size=[self.memory_size, self.action_nums]).to(self.device)
-        self.memory_c_logprobs = torch.zeros(size=[self.memory_size, 1]).to(self.device)
+        self.memory_c_logprobs = torch.zeros(size=[self.memory_size, self.action_nums]).to(self.device)
         self.memory_d_a = torch.zeros(size=[self.memory_size, 1]).to(self.device)
         self.memory_d_logprobs = torch.zeros(size=[self.memory_size, 1]).to(self.device)
         self.memory_reward = torch.zeros(size=[self.memory_size, 1]).to(self.device)
