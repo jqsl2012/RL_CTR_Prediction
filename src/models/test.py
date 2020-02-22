@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import MultivariateNormal, Categorical
+from torch.distributions import MultivariateNormal, Categorical, Normal
 
 x = torch.softmax(torch.Tensor([[0.1, 0.2, 0.7],[0.3, 0.4, 0.2]]), dim=-1)
 print(torch.softmax(x, dim=-1))
@@ -84,3 +84,12 @@ class Hybrid_Actor_Critic(nn.Module):
 
 
 Hybrid_Actor_Critic(10,2)
+
+m = Normal(torch.tensor([0.0, 1.0, 2.0]), torch.tensor([1.0]))
+k = m.sample()
+o = m.sample()
+l = m.log_prob(k)
+l1 = m.log_prob(o)
+print(k, l, o)
+
+print(torch.mean((l - l1).exp()))
