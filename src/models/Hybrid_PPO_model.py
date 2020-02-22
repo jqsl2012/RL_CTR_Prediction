@@ -247,7 +247,7 @@ class Hybrid_PPO_Model():
             self.optimizer.step()
             # print(self.hybrid_actor_critic.Critic.weight)
             # print('4', datetime.datetime.now())
-            print("第个epoch的学习率：%f" % (self.optimizer.param_groups[0]['lr']))
+            # print("第个epoch的学习率：%f" % (self.optimizer.param_groups[0]['lr']))
 
 
             return_loss = loss.mean().item()
