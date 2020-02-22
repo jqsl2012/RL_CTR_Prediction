@@ -53,16 +53,13 @@ def get_dataset(datapath, dataset_name, campaign_id):
 
     return train_fm, train_data, test_data, field_nums, feature_nums
 
-def generate_preds(model_dict, features, actions, prob_weights,
-                   labels, device, mode):
+def generate_preds(model_dict, features, actions, prob_weights, labels, device, mode):
     y_preds = torch.ones(size=[len(features), 1]).to(device)
     rewards = torch.ones(size=[len(features), 1]).to(device)
 
     sort_prob_weights, sortindex_prob_weights = torch.sort(-prob_weights, dim=1)
 
     pretrain_model_len = len(model_dict)  # 有多少个预训练模型
-
-    return_prob_weights = torch.zeros(size=[len(features), pretrain_model_len]).to(device)
 
     pretrain_y_preds = {}
     for i in range(pretrain_model_len):
@@ -87,8 +84,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
             y_preds[with_action_indexs, :] = current_y_preds
 
-            return_prob_weights[with_action_indexs] = current_prob_weights
-
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
@@ -106,9 +101,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_softmax_weights = torch.softmax(
                 sort_prob_weights[with_action_indexs][:, :i] * -1, dim=1
             ).to(device)  # 再进行softmax
-
-            for k in range(i):
-                return_prob_weights[with_action_indexs, current_choose_models[:, k]] = current_softmax_weights[:, k]
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
 
@@ -142,7 +134,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
         rewards[with_action_indexs, :] = current_basic_rewards
 
-    return y_preds, return_prob_weights, rewards
+    return y_preds, rewards
 
 
 def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, device):
@@ -156,17 +148,15 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         embedding_vectors = embedding_layer.forward(features)
 
-        d_a, d_logprobs, ensemble_d_a = rl_model.choose_d_a(embedding_vectors)
+        c_as, d_as = rl_model.choose_a(embedding_vectors)
 
-        c_a, c_logprobs, ensemble_prob_weights = rl_model.choose_c_a(embedding_vectors)
-
-        y_preds, prob_weights_new, rewards = \
-            generate_preds(model_dict, features, ensemble_d_a, ensemble_prob_weights, labels, device, mode='train')
+        y_preds, rewards = \
+            generate_preds(model_dict, features, d_as[2], c_as[2], labels, device, mode='train')
 
         # targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         # predicts.extend(y_preds.tolist())
 
-        rl_model.store_memory(features, c_a, c_logprobs, d_a, d_logprobs, rewards)
+        rl_model.store_memory(features, c_as[0], c_as[1], d_as[0], d_as[1], rewards)
         states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards = rl_model.memory()
         loss = rl_model.learn(embedding_layer.forward(states), embedding_layer.forward(states_), old_c_a,
                               old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards)
@@ -191,14 +181,13 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
 
             embedding_vectors = embedding_layer.forward(features)
 
-            actions = rl_model.choose_best_d_a(embedding_vectors)
-            prob_weights = rl_model.choose_best_c_a(embedding_vectors)
+            c_as, d_as = rl_model.choose_best_a(embedding_vectors)
 
             # x = torch.argsort(prob_weights)[:, 0]
             # print(len((actions == 2).nonzero()), len((x == 3  ).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
             #
             # print(len((x == 0).nonzero()), len((x == 1).nonzero()), len((x == 2).nonzero()), len((x == 3).nonzero()), len((x == 4).nonzero()))
-            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            y, rewards = generate_preds(model_dict, features, d_as, c_as,
                                                           labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -220,16 +209,16 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
 
             embedding_vectors = embedding_layer.forward(features)
 
-            actions = rl_model.choose_best_d_a(embedding_vectors)
-            prob_weights = rl_model.choose_best_c_a(embedding_vectors)
-            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            c_as, d_as = rl_model.choose_best_a(embedding_vectors)
+
+            y, rewards = generate_preds(model_dict, features, d_as, c_as,
                                                           labels, device, mode='test')
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
 
-            final_actions = torch.cat([final_actions, actions], dim=0)
-            final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
+            final_actions = torch.cat([final_actions, d_as], dim=0)
+            final_prob_weights = torch.cat([final_prob_weights, c_as], dim=0)
 
     return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 

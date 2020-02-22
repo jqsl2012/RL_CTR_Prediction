@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
-from torch.distributions import MultivariateNormal, Categorical
+from torch.distributions import Normal, Categorical
 import datetime
 
 def setup_seed(seed):
@@ -47,45 +47,51 @@ class Hybrid_Actor_Critic(nn.Module):
         # Discrete_Actor
         self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1)
 
-        self.action_std = 0.5
+        self.action_std = nn.Parameter(torch.zeros(1, action_nums))
         self.action_nums = action_nums
 
-    def state_value(self, input):
+    def act(self, input):
         mlp_out = self.mlp(input)
-        state_value = self.Critic(mlp_out)
 
-        return state_value
+        c_action_means = torch.softmax(self.Continuous_Actor(mlp_out), dim=-1)
+        c_action_dist = Normal(c_action_means, F.softplus(self.action_std))
+        c_actions = c_action_dist.sample()
+        c_action_logprobs = c_action_dist.log_prob(c_actions)
+        ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-    def c_action(self, input):
+        return_c_as = (c_actions.view(-1, 1), c_action_logprobs.view(-1, 1), ensemble_c_actions.view(-1, 1))
+
+        d_actions = torch.softmax(self.Discrete_Actor(mlp_out), dim=-1)
+        d_action_dist = Categorical(d_actions)
+        d_actions = d_action_dist.sample()
+        d_action_logprobs = d_actions.log_prob(d_actions)
+        ensemble_d_actions = d_actions + 2
+
+        return_d_as = (d_actions.view(-1, 1), d_action_logprobs.view(-1, 1), ensemble_d_actions.view(-1, 1))
+
+        return return_c_as, return_d_as
+
+    def best_a(self, input):
         mlp_out = self.mlp(input)
-        c_actions = self.Continuous_Actor(mlp_out)
 
-        return torch.softmax(c_actions, dim=-1)
+        c_actions = torch.softmax(self.Continuous_Actor(mlp_out), dim=-1)
+        d_actions = torch.softmax(self.Discrete_Actor(mlp_out), dim=-1)
 
-    def d_action(self, input):
-        mlp_out = self.mlp(input)
-        d_actions = self.Discrete_Actor(mlp_out)
-
-        return torch.softmax(d_actions, dim=-1)
+        return c_actions, d_actions
 
     def evaluate(self, input, c_a, d_a):
-        state_value = self.state_value(input)
+        mlp_out = self.mlp(input)
 
-        c_action_mean = self.c_action(input)
+        state_value = self.Critic(mlp_out)
 
-        c_action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).cuda()
-        c_action_dist = MultivariateNormal(c_action_mean, c_action_std)
-
+        c_action_means = torch.softmax(self.Continuous_Actor(mlp_out), dim=-1)
+        c_action_dist = Normal(c_action_means, F.softplus(self.action_std))
         c_action_logprobs = c_action_dist.log_prob(c_a).view(-1, 1)
-
         c_action_entropy = c_action_dist.entropy().view(-1, 1)
 
-        d_action_values = self.d_action(input)
-
+        d_action_values = self.Discrete_Actor(mlp_out)
         d_action_dist = Categorical(d_action_values)
-
         d_actions_logprobs = d_action_dist.log_prob(d_a.squeeze(1)).view(-1, 1)
-
         d_action_entropy = d_action_dist.entropy().view(-1, 1)
 
         return state_value, c_action_logprobs, c_action_entropy, d_actions_logprobs, d_action_entropy
@@ -160,55 +166,20 @@ class Hybrid_PPO_Model():
 
         # self.memory_counter += transition_lens
 
-    def choose_c_a(self, state):
+    def choose_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_mean = self.hybrid_actor_critic.c_action(state)
+            c_a, d_a = self.hybrid_actor_critic.act(state)
 
-        action_std = torch.diag(torch.full((self.action_nums,), self.action_std * self.action_std)).to(self.device)
-        action_dist = MultivariateNormal(action_mean, action_std)
+        return c_a, d_a
 
-        actions = action_dist.sample() # 分布产生的结果
-
-        actions_logprobs = action_dist.log_prob(actions).view(-1, 1)
-
-        ensemble_c_actions = torch.softmax(actions, dim=-1) # 模型所需的动作
-
-        self.hybrid_actor_critic.train()
-
-        return actions, actions_logprobs, ensemble_c_actions
-
-    def choose_d_a(self, state):
+    def choose_best_a(self, state):
         self.hybrid_actor_critic.eval()
         with torch.no_grad():
-            action_values = self.hybrid_actor_critic.d_action(state)
+            ensemble_c_actions, d_actions = self.hybrid_actor_critic.best_a(state)
+            ensemble_d_actions = torch.argsort(-d_actions)[:, 0] + 2
 
-        action_dist = Categorical(action_values)
-        actions = action_dist.sample() # 分布产生的结果
-
-        actions_logprobs = action_dist.log_prob(actions).view(-1, 1)
-
-        ensemble_d_actions = actions + 2 # 模型所需的动作
-
-        self.hybrid_actor_critic.train()
-
-        return actions.view(-1, 1), actions_logprobs, ensemble_d_actions.view(-1, 1)
-
-    def choose_best_c_a(self, state):
-        self.hybrid_actor_critic.eval()
-        with torch.no_grad():
-            ensemble_c_actions = self.hybrid_actor_critic.c_action(state)
-
-        return ensemble_c_actions
-
-    def choose_best_d_a(self, state):
-        self.hybrid_actor_critic.eval()
-        with torch.no_grad():
-            action_values = self.hybrid_actor_critic.d_action(state)
-
-        ensemble_d_actions = torch.argsort(-action_values)[:, 0] + 2
-
-        return ensemble_d_actions.view(-1, 1)
+        return ensemble_c_actions, ensemble_d_actions.view(-1, 1)
 
     def memory(self):
         states = self.memory_state.long()
