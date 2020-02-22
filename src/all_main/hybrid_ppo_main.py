@@ -141,8 +141,6 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
     total_loss = 0
     log_intervals = 0
     total_rewards = 0
-    targets, predicts = list(), list()
-
     for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0)):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
@@ -168,7 +166,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_loss, total_rewards / log_intervals, 1
+    return total_loss, total_rewards / log_intervals
 
 
 def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
@@ -291,7 +289,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     # model_dict = {0: WandD.to(device), 1: DeepFM.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
 
     model_dict_len = len(model_dict)
-
+    print(model_dict_len / batch_size)
     memory_size = 1000000
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size,
                                               memory_size, device, campaign_id)
@@ -313,7 +311,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
+        train_average_loss, train_average_rewards = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
         rewards_records.append(train_average_rewards)
@@ -325,7 +323,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
 
         train_end_time = datetime.datetime.now()
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training average rewards',
-              train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
+              train_average_rewards, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
         # if (epoch_i + 1) % 10 == 0:
