@@ -26,11 +26,11 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, lr_lamda, memory_size, device, campaign_id):
+def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, init_lr, end_lr, epoch, memory_size, device, campaign_id):
     RL_model = hybrid_ppo_model.Hybrid_PPO_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
                                                campaign_id=campaign_id, batch_size=batch_size // 16,
-                                               lr_lamda=lr_lamda,
+                                               init_lr=init_lr, end_lr=end_lr, train_epochs=epoch,
                                                memory_size=batch_size, device=device)
     return RL_model
 
@@ -222,7 +222,7 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
     return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
 
-def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, batch_size, device, save_param_dir):
+def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr, end_lr, epoch, batch_size, device, save_param_dir):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
@@ -292,11 +292,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     model_dict_len = len(model_dict)
     memory_size = 1000000
 
-    init_lr = 1e-2
-    end_lr = 1e-4
-    lr_lamda = (init_lr - end_lr) / epoch
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size,
-                         lr_lamda, memory_size, device, campaign_id)
+                         init_lr, end_lr, epoch, memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
     embedding_layer.load_embedding(FM_pretrain_params)
@@ -365,10 +362,10 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, b
     day_aucs_df = pd.DataFrame(data=day_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-    torch.save(test_rl_model.Continuous_Actor.state_dict(),
-               save_param_dir + campaign_id + '/continuous_model' + 'best.pth')  # 存储最优参数
-    torch.save(test_rl_model.Discrete_Actor.state_dict(),
-               save_param_dir + campaign_id + '/discrete_model' + 'best.pth')  # 存储最优参数
+    # torch.save(test_rl_model.hybrid_actor_critic.state_dict(),
+    #            save_param_dir + campaign_id + '/continuous_model' + 'best.pth')  # 存储最优参数
+    # torch.save(test_rl_model.Discrete_Actor.state_dict(),
+    #            save_param_dir + campaign_id + '/discrete_model' + 'best.pth')  # 存储最优参数
 
     rewards_records_df = pd.DataFrame(data=rewards_records)
     rewards_records_df.to_csv(submission_path + 'train_rewards.csv', header=None)
@@ -397,7 +394,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=500)
-    parser.add_argument('--learning_rate', type=float, default=1e-3)
+    parser.add_argument('--init_lr', type=float, default=1e-3)
+    parser.add_argument('--end_lr', type=float, default=1e-2)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
@@ -415,6 +413,8 @@ if __name__ == '__main__':
         args.campaign_id,
         args.latent_dims,
         args.model_name,
+        args.init_lr,
+        args.end_lr,
         args.epoch,
         args.batch_size,
         args.device,

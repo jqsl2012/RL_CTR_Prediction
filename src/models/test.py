@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal, Categorical, Normal
-from sympy import *
 
 x = torch.softmax(torch.Tensor([[0.1, 0.2, 0.7],[0.3, 0.4, 0.2]]), dim=-1)
 print(torch.softmax(x, dim=-1))
@@ -100,6 +99,5 @@ end_lr = 1e-4
 lr_lamda = (init_lr - end_lr) / 500
 
 for i in range(500):
-    init_lr = init_lr - lr_lamda
-    print(init_lr)
+    print(init_lr - lr_lamda * (i + 1))
 
