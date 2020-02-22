@@ -105,7 +105,6 @@ class Hybrid_PPO_Model():
             action_nums=2,
             campaign_id='1458',
             init_lr=1e-2,
-            end_lr=1e-2,
             train_epochs=500,
             reward_decay=1,
             lr_lamda=0.01,
@@ -121,7 +120,6 @@ class Hybrid_PPO_Model():
         self.action_nums = action_nums
         self.campaign_id = campaign_id
         self.init_lr = init_lr
-        self.end_lr = end_lr
         self.train_epochs = train_epochs
         self.gamma = reward_decay
         self.latent_dims = latent_dims
@@ -152,9 +150,6 @@ class Hybrid_PPO_Model():
 
         # 优化器
         self.optimizer = torch.optim.Adam(self.hybrid_actor_critic.parameters(), lr=self.init_lr, weight_decay=1e-5)
-        self.lr_scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer,
-                                                              lr_lambda=lambda epoch: self.init_lr - epoch *
-                                                              (self.init_lr - self.end_lr)/self.train_epochs)
 
         self.loss_func = nn.MSELoss()
 

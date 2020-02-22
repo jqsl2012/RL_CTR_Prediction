@@ -26,11 +26,11 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, init_lr, end_lr, epoch, memory_size, device, campaign_id):
+def get_model(action_nums, feature_nums, field_nums, latent_dims, batch_size, init_lr, memory_size, device, campaign_id):
     RL_model = hybrid_ppo_model.Hybrid_PPO_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums,
                                                campaign_id=campaign_id, batch_size=batch_size // 16,
-                                               init_lr=init_lr, end_lr=end_lr, train_epochs=epoch,
+                                               init_lr=init_lr,
                                                memory_size=batch_size, device=device)
     return RL_model
 
@@ -293,7 +293,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr,
     memory_size = 1000000
 
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, batch_size,
-                         init_lr, end_lr, epoch, memory_size, device, campaign_id)
+                         init_lr, memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
     embedding_layer.load_embedding(FM_pretrain_params)
@@ -315,7 +315,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr,
         train_average_loss, train_average_rewards = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
-        rl_model.lr_scheduler.step(epoch_i)
+
+        rl_model.optimizer.param_groups[0]['lr'] = init_lr - epoch_i * (init_lr - end_lr) / epoch
+
         rewards_records.append(train_average_rewards)
 
         auc, valid_loss = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
