@@ -195,7 +195,7 @@ class Hybrid_PPO_Model():
 
         return states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards
 
-    def learn(self, states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards, epoch):
+    def learn(self, states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards):
         return_loss = 0
         # print('1', datetime.datetime.now())
 
@@ -246,7 +246,7 @@ class Hybrid_PPO_Model():
             self.optimizer.step()
             # print(self.hybrid_actor_critic.Critic.weight)
             # print('4', datetime.datetime.now())
-            print("第%d个epoch的学习率：%f" % (epoch, self.optimizer.param_groups[0]['lr']))
+            print("第个epoch的学习率：%f" % (self.optimizer.param_groups[0]['lr']))
 
             return_loss = loss.mean().item()
         # print('5', datetime.datetime.now())
