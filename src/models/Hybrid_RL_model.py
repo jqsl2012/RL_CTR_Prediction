@@ -71,13 +71,14 @@ class Continuous_Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dims):
+    def __init__(self, input_dims, c_action_nums):
         super(Critic, self).__init__()
         self.input_dims = input_dims
+        self.c_action_nums = c_action_nums
 
         self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
 
-        deep_input_dims = self.input_dims + self.action_nums + 1
+        deep_input_dims = self.input_dims + self.c_action_nums + 1
         layers = list()
 
         neuron_nums = [300, 300, 300]
@@ -141,11 +142,11 @@ class Hybrid_RL_Model():
 
         self.Continuous_Actor = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic = Critic(self.input_dims).to(self.device)
+        self.Critic = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
         
         self.Continuous_Actor_ = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor_ = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic_ = Critic(self.input_dims).to(self.device)
+        self.Critic_ = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
 
         # 优化器
         self.optimizer_c_a = torch.optim.Adam(self.Continuous_Actor.parameters(), lr=self.lr_C_A, weight_decay=1e-5)
