@@ -55,7 +55,7 @@ class Continuous_Actor(nn.Module):
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, action_nums))
-        layers.append(nn.Softmax(dim=-1))
+        layers.append(nn.Tanh())
 
         self.mlp = nn.Sequential(*layers)
 
@@ -148,7 +148,6 @@ class Hybrid_RL_Model():
         self.optimizer_d_a = torch.optim.Adam(self.Discrete_Actor.parameters(), lr=self.lr_D_A, weight_decay=1e-5)
         self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
-        self.action_std = 0.5
         self.loss_func = nn.MSELoss(reduction='mean')
 
     def store_transition(self, features, action_rewards, discrete_actions):
@@ -180,16 +179,18 @@ class Hybrid_RL_Model():
         with torch.no_grad():
             action_mean = self.Continuous_Actor.forward(state, discrete_a)
 
-        action_std = torch.diag(torch.full((self.c_a_action_nums,), exploration_rate * exploration_rate)).to(self.device)
-        action_dist = MultivariateNormal(action_mean, action_std)
+        random_seeds = torch.rand(size=[len(state), 1]).to(self.device)
 
-        actions = action_dist.sample()  # 分布产生的结果
+        random_action = torch.normal(action_mean, exploration_rate)
+        # random_action = torch.clamp(torch.normal(action_mean, exploration_rate), -1, 1)
 
-        ensemble_c_actions = torch.softmax(actions, dim=-1)  # 模型所需的动作
+        c_actions = torch.where(random_seeds >= exploration_rate, action_mean, random_action)
+
+        ensemble_c_actions = torch.softmax(c_actions, dim=-1)  # 模型所需的动作
 
         self.Continuous_Actor.train()
 
-        return ensemble_c_actions
+        return c_actions, ensemble_c_actions
 
     def choose_discrete_action(self, state, exploration_rate):
         self.Discrete_Actor.eval()
@@ -197,6 +198,7 @@ class Hybrid_RL_Model():
             action_values = self.Discrete_Actor.forward(state)
 
         random_seeds = torch.rand(len(state), 1).to(self.device)
+
         action_dist = Categorical(action_values)
         actions = action_dist.sample()  # 分布产生的结果
         random_d_actions = actions + 2  # 模型所需的动作
@@ -212,7 +214,7 @@ class Hybrid_RL_Model():
     def choose_best_continuous_action(self, state, discrete_a):
         self.Continuous_Actor.eval()
         with torch.no_grad():
-            action = self.Continuous_Actor.forward(state, discrete_a)
+            action = torch.softmax(self.Continuous_Actor.forward(state, discrete_a), dim=-1)
 
         return action
     
@@ -228,7 +230,8 @@ class Hybrid_RL_Model():
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def sample_batch(self):
+    def learn(self, embedding_layer):
+        # sample
         if self.memory_counter > self.memory_size:
             sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
         else:
@@ -238,42 +241,15 @@ class Hybrid_RL_Model():
         batch_memory_action_rewards = self.memory_action_reward[sample_index, :]
         b_discrete_a = self.memory_discrete_action[sample_index, :]
 
-        b_s = batch_memory_states
+        b_s = embedding_layer.forward(batch_memory_states)
         b_a = batch_memory_action_rewards[:, 0: self.c_a_action_nums]
         b_r = torch.unsqueeze(batch_memory_action_rewards[:, self.c_a_action_nums], 1)
-        b_s_ = batch_memory_states
+        b_s_ = b_s # embedding_layer.forward(batch_memory_states)
 
-        return b_s, b_a, b_r, b_s_, b_discrete_a
-
-    def learn_c(self, b_s, b_a, b_r, b_s_, b_discrete_a):
-        # target_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
-                                                                                                b_discrete_a),
-                                                           b_discrete_a).detach()
-        q = self.Critic.forward(b_s, b_a, b_discrete_a)
-
-        td_error = self.loss_func(q, q_target)
-
-        self.optimizer_c.zero_grad()
-        td_error.backward()
-        self.optimizer_c.step()
-
-        td_error_r = td_error.item()
-
-        return td_error_r
-
-    def learn_c_a(self, b_s, b_discrete_a):
-        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
-
-        self.optimizer_c_a.zero_grad()
-        c_a_loss.backward()
-        self.optimizer_c_a.step()
-
-        return c_a_loss.item()
-
-    def learn_d_a(self, b_s, b_discrete_a, b_r, b_s_):
-        q_eval = self.Discrete_Actor.forward(b_s).gather(1, b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
-        q_next = self.Discrete_Actor_.forward(b_s_).detach()  # detach from graph, don't backpropagate，因为target网络不需要训练
+        # D_A
+        q_eval = self.Discrete_Actor.forward(b_s).gather(1,
+                                                         b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
+        q_next = self.Discrete_Actor_.forward(b_s_)
         # 下一状态s的eval_net值
         q_eval_next = self.Discrete_Actor.forward(b_s_)
         max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
@@ -282,13 +258,39 @@ class Hybrid_RL_Model():
         q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
 
         # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target)
+        d_a_loss = self.loss_func(q_eval, q_target.detach())
 
         self.optimizer_d_a.zero_grad()
         d_a_loss.backward()
         self.optimizer_d_a.step()
 
-        return d_a_loss.item()
+        d_a_loss_r = d_a_loss.item()
+
+        # Critic
+        # target_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
+        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
+                                                                                                b_discrete_a),
+                                                           b_discrete_a)
+        q = self.Critic.forward(b_s, b_a, b_discrete_a)
+
+        td_error = self.loss_func(q, q_target.detach())
+
+        self.optimizer_c.zero_grad()
+        td_error.backward()
+        self.optimizer_c.step()
+
+        td_error_r = td_error.item()
+
+        # C_A
+        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
+
+        self.optimizer_c_a.zero_grad()
+        c_a_loss.backward()
+        self.optimizer_c_a.step()
+        c_a_loss_r = c_a_loss.item()
+
+        return td_error_r, c_a_loss_r, d_a_loss_r
+
 
 class OrnsteinUhlenbeckNoise:
     def __init__(self, mu):

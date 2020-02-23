@@ -156,31 +156,25 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         embedding_vectors = embedding_layer.forward(features)
 
-        actions = rl_model.choose_discrete_action(embedding_vectors, exploration_rate)
+        d_actions = rl_model.choose_discrete_action(embedding_vectors, exploration_rate)
 
-        prob_weights = rl_model.choose_continuous_action(embedding_vectors, actions.float(), exploration_rate)
+        c_actions, prob_weights = rl_model.choose_continuous_action(embedding_vectors, d_actions.float(), exploration_rate)
 
         y_preds, prob_weights_new, rewards = \
-            generate_preds(model_dict, features, actions, prob_weights, labels, device, mode='train')
+            generate_preds(model_dict, features, d_actions, prob_weights, labels, device, mode='train')
 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        action_rewards = torch.cat([prob_weights, rewards], dim=1)
-        rl_model.store_transition(features, action_rewards, actions)
+        action_rewards = torch.cat([c_actions, rewards], dim=1)
+        rl_model.store_transition(features, action_rewards, d_actions)
 
-        b_s, b_a, b_r, b_s_, b_discrete_a = rl_model.sample_batch()
-        b_s_embedding = embedding_layer.forward(b_s)
-        b_s_embedding_ = embedding_layer.forward(b_s_)
-
-        td_error = rl_model.learn_c(b_s_embedding, b_a, b_r, b_s_embedding_, b_discrete_a)
-        c_a_loss = rl_model.learn_c_a(b_s_embedding, b_discrete_a)
-        d_a_loss = rl_model.learn_d_a(b_s_embedding, b_discrete_a, b_r, b_s_embedding_)
+        td_error, c_loss, d_loss = rl_model.learn(embedding_layer)
         rl_model.soft_update(rl_model.Continuous_Actor, rl_model.Continuous_Actor_)
         rl_model.soft_update(rl_model.Discrete_Actor, rl_model.Discrete_Actor_)
         rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
-        total_loss += c_a_loss  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        total_loss += td_error  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
         log_intervals += 1
 
         total_rewards += torch.sum(rewards, dim=0).item()
