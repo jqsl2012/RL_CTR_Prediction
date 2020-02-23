@@ -251,11 +251,32 @@ class Hybrid_RL_Model():
         b_r = torch.unsqueeze(batch_memory_action_rewards[:, self.c_a_action_nums], 1)
         b_s_ = b_s # embedding_layer.forward(batch_memory_states)
 
+        # D_A
+        q_eval = self.Discrete_Actor.forward(b_s).gather(1,
+                                                         b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
+        q_next = self.Discrete_Actor_.forward(b_s_)
+
+        # 下一状态s的eval_net值
+        q_eval_next = self.Discrete_Actor.forward(b_s_)
+        max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
+        select_q_next = q_next.gather(1, max_b_a_next)
+
+        q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
+
+        # 训练eval_net
+        d_a_loss = self.loss_func(q_eval, q_target.detach())
+
+        self.optimizer_d_a.zero_grad()
+        d_a_loss.backward()
+        self.optimizer_d_a.step()
+
+        d_a_loss_r = d_a_loss.item()
+
         # Critic
-        evaluate_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
+        # evaluate_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
         q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
-                                                           evaluate_discrete_action),
-                                                           evaluate_discrete_action)
+                                                           b_discrete_a),
+                                                           b_discrete_a)
         q = self.Critic.forward(b_s, b_a, b_discrete_a)
 
         td_error = self.loss_func(q, q_target.detach())
@@ -273,26 +294,6 @@ class Hybrid_RL_Model():
         c_a_loss.backward()
         self.optimizer_c_a.step()
         c_a_loss_r = c_a_loss.item()
-
-        # D_A
-        q_eval = self.Discrete_Actor.forward(b_s).gather(1,
-                                                         b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
-        q_next = self.Discrete_Actor_.forward(b_s_)
-        # 下一状态s的eval_net值
-        q_eval_next = self.Discrete_Actor.forward(b_s_)
-        max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
-        select_q_next = q_next.gather(1, max_b_a_next)
-
-        q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
-
-        # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target.detach())
-
-        self.optimizer_d_a.zero_grad()
-        d_a_loss.backward()
-        self.optimizer_d_a.step()
-
-        d_a_loss_r = d_a_loss.item()
 
         return td_error_r, c_a_loss_r, d_a_loss_r
 
