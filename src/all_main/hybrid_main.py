@@ -181,7 +181,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return c_a_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
+    return total_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
 
 
 def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
@@ -237,7 +237,9 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
     return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
 
-def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr_a, end_lr_a, init_lr_c, end_lr_c, epoch, batch_size, device, save_param_dir):
+def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
+         init_lr_a, end_lr_a, init_lr_c, end_lr_c, init_exploration_rate, end_exploration_rate,
+         epoch, batch_size, device, save_param_dir):
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
@@ -319,7 +321,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr_
     valid_losses = []
 
     start_time = datetime.datetime.now()
-    exploration_rate = 0.9
+    exploration_rate = init_exploration_rate
 
     rewards_records = []
     for epoch_i in range(epoch):
@@ -330,9 +332,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr_
         train_average_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
+
         rl_model.optimizer_c.param_groups[0]['lr'] = init_lr_c - epoch_i * (init_lr_c - end_lr_c) / epoch
         rl_model.optimizer_c_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / epoch
         rl_model.optimizer_d_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / epoch
+
+        exploration_rate -= (init_exploration_rate - end_exploration_rate) / epoch
 
         rewards_records.append(train_average_rewards)
 
@@ -345,10 +350,6 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr_
         print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training average rewards',
               train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
-
-        if (epoch_i + 1) % 10 == 0:
-            exploration_rate -= 10 / epoch
-            exploration_rate = max(exploration_rate, 0.1)
 
     end_time = datetime.datetime.now()
 
@@ -416,6 +417,8 @@ if __name__ == '__main__':
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-2)
     parser.add_argument('--end_lr_c', type=float, default=1e-3)
+    parser.add_argument('--init_exploration_rate', type=float, default=0.9)
+    parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
@@ -437,6 +440,8 @@ if __name__ == '__main__':
         args.end_lr_a,
         args.init_lr_c,
         args.end_lr_c,
+        args.init_exploration_rate,
+        args.end_exploration_rate,
         args.epoch,
         args.batch_size,
         args.device,

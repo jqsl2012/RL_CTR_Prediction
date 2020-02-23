@@ -20,6 +20,9 @@ class Discrete_Actor(nn.Module):
         self.input_dims = input_dims
 
         deep_input_dims = self.input_dims
+
+        self.bn_input = nn.BatchNorm1d(self.input_dims)
+
         layers = list()
         neuron_nums = [300, 300, 300]
         for neuron_num in neuron_nums:
@@ -34,7 +37,7 @@ class Discrete_Actor(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input):
-        actions_value = self.mlp(input)
+        actions_value = self.mlp(self.bn_input(input))
 
         return actions_value
 
@@ -43,7 +46,7 @@ class Continuous_Actor(nn.Module):
         super(Continuous_Actor, self).__init__()
         self.input_dims = input_dims
 
-        self.bn_input = nn.BatchNorm1d(1)
+        self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
 
         deep_input_dims = self.input_dims + 1
         layers = list()
@@ -60,7 +63,7 @@ class Continuous_Actor(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input, discrete_a):
-        obs = torch.cat([input, self.bn_input(discrete_a)], dim=1)
+        obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
 
         out = self.mlp(obs)
 
@@ -68,12 +71,13 @@ class Continuous_Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, input_dims, action_nums):
+    def __init__(self, input_dims):
         super(Critic, self).__init__()
+        self.input_dims = input_dims
 
-        self.bn_input = nn.BatchNorm1d(1)
+        self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
 
-        deep_input_dims = input_dims + action_nums + 1
+        deep_input_dims = self.input_dims + self.action_nums + 1
         layers = list()
 
         neuron_nums = [300, 300, 300]
@@ -88,7 +92,7 @@ class Critic(nn.Module):
         self.mlp = nn.Sequential(*layers)
 
     def forward(self, input, action, discrete_a):
-        obs = torch.cat([input, self.bn_input(discrete_a)], dim=1)
+        obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
         cat = torch.cat([obs, action], dim=1)
 
         q_out = self.mlp(cat)
@@ -137,11 +141,11 @@ class Hybrid_RL_Model():
 
         self.Continuous_Actor = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
+        self.Critic = Critic(self.input_dims).to(self.device)
         
         self.Continuous_Actor_ = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor_ = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
-        self.Critic_ = Critic(self.input_dims, self.c_a_action_nums).to(self.device)
+        self.Critic_ = Critic(self.input_dims).to(self.device)
 
         # 优化器
         self.optimizer_c_a = torch.optim.Adam(self.Continuous_Actor.parameters(), lr=self.lr_C_A, weight_decay=1e-5)
@@ -246,6 +250,29 @@ class Hybrid_RL_Model():
         b_r = torch.unsqueeze(batch_memory_action_rewards[:, self.c_a_action_nums], 1)
         b_s_ = b_s # embedding_layer.forward(batch_memory_states)
 
+        # Critic
+        evaluate_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
+        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
+                                                           evaluate_discrete_action),
+                                                           evaluate_discrete_action)
+        q = self.Critic.forward(b_s, b_a, b_discrete_a)
+
+        td_error = self.loss_func(q, q_target.detach())
+
+        self.optimizer_c.zero_grad()
+        td_error.backward()
+        self.optimizer_c.step()
+
+        td_error_r = td_error.item()
+
+        # C_A
+        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
+
+        self.optimizer_c_a.zero_grad()
+        c_a_loss.backward()
+        self.optimizer_c_a.step()
+        c_a_loss_r = c_a_loss.item()
+
         # D_A
         q_eval = self.Discrete_Actor.forward(b_s).gather(1,
                                                          b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
@@ -265,29 +292,6 @@ class Hybrid_RL_Model():
         self.optimizer_d_a.step()
 
         d_a_loss_r = d_a_loss.item()
-
-        # Critic
-        # target_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Continuous_Actor_.forward(b_s_,
-                                                                                                b_discrete_a),
-                                                           b_discrete_a)
-        q = self.Critic.forward(b_s, b_a, b_discrete_a)
-
-        td_error = self.loss_func(q, q_target.detach())
-
-        self.optimizer_c.zero_grad()
-        td_error.backward()
-        self.optimizer_c.step()
-
-        td_error_r = td_error.item()
-
-        # C_A
-        c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
-
-        self.optimizer_c_a.zero_grad()
-        c_a_loss.backward()
-        self.optimizer_c_a.step()
-        c_a_loss_r = c_a_loss.item()
 
         return td_error_r, c_a_loss_r, d_a_loss_r
 
