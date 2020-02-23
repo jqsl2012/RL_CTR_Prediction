@@ -308,7 +308,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     model_dict_len = len(model_dict)
 
-    memory_size = 1000000
+    memory_size = round(len(train_data), -6)
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
                                               memory_size, device, campaign_id)
 
