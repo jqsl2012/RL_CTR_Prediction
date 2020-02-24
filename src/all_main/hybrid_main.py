@@ -333,11 +333,11 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
 
-        rl_model.optimizer_c.param_groups[0]['lr'] = init_lr_c - epoch_i * (init_lr_c - end_lr_c) / epoch
-        rl_model.optimizer_c_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / epoch
-        rl_model.optimizer_d_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / epoch
+        rl_model.optimizer_c.param_groups[0]['lr'] = init_lr_c - epoch_i * (init_lr_c - end_lr_c) / (epoch - 100)
+        rl_model.optimizer_c_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100)
+        rl_model.optimizer_d_a.param_groups[0]['lr'] = init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100)
 
-        exploration_rate -= (init_exploration_rate - end_exploration_rate) / epoch
+        exploration_rate -= (init_exploration_rate - end_exploration_rate) / (epoch - 100)
 
         rewards_records.append(train_average_rewards)
 
