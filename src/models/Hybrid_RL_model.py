@@ -186,8 +186,8 @@ class Hybrid_RL_Model():
 
         random_seeds = torch.rand(size=[len(state), 1]).to(self.device)
 
-        random_action = torch.normal(action_mean, exploration_rate)
-        # random_action = torch.clamp(torch.normal(action_mean, exploration_rate), -1, 1)
+        # random_action = torch.normal(action_mean, exploration_rate)
+        random_action = torch.clamp(torch.normal(action_mean, 1), -1, 1)
 
         c_actions = torch.where(random_seeds >= exploration_rate, action_mean, random_action)
 
