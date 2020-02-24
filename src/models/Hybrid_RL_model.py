@@ -34,7 +34,8 @@ class Discrete_Actor(nn.Module):
             nn.Linear(neuron_nums[1], neuron_nums[2]),
             nn.BatchNorm1d(neuron_nums[2]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[2], action_nums)
+            nn.Linear(neuron_nums[2], action_nums),
+            nn.Softmax(dim=-1)
         )
 
     def forward(self, input):
@@ -83,7 +84,6 @@ class Critic(nn.Module):
         self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
 
         deep_input_dims = self.input_dims + self.c_action_nums + 1
-        layers = list()
 
         neuron_nums = [300, 300, 300]
         self.mlp = nn.Sequential(
@@ -190,11 +190,10 @@ class Hybrid_RL_Model():
         self.Continuous_Actor.eval()
         with torch.no_grad():
             action_mean = self.Continuous_Actor.forward(state, discrete_a)
-
         random_seeds = torch.rand(size=[len(state), 1]).to(self.device)
 
         # random_action = torch.normal(action_mean, exploration_rate)
-        random_action = torch.clamp(torch.normal(action_mean, 1), -1, 1)
+        random_action = torch.clamp(torch.normal(action_mean, exploration_rate), -1, 1)
 
         c_actions = torch.where(random_seeds >= exploration_rate, action_mean, random_action)
 
@@ -263,12 +262,12 @@ class Hybrid_RL_Model():
                                                          b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
         q_next = self.Discrete_Actor_.forward(b_s_)
 
-        # # 下一状态s的eval_net值
+        # # # 下一状态s的eval_net值
         # q_eval_next = self.Discrete_Actor.forward(b_s_)
         # max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
         # select_q_next = q_next.gather(1, max_b_a_next)
 
-        q_target = b_r + self.gamma * q_next.max(1)[0]  # shape (batch, 1)
+        q_target = b_r + self.gamma * q_next.max(1)[0].view(-1, 1)  # shape (batch, 1)
 
         # 训练eval_net
         d_a_loss = self.loss_func(q_eval, q_target.detach())
