@@ -23,23 +23,24 @@ class Discrete_Actor(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        layers = list()
         neuron_nums = [300, 300, 300]
-        for neuron_num in neuron_nums:
-            layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
-            layers.append(nn.ReLU())
-            deep_input_dims = neuron_num
-
-        layers.append(nn.Linear(deep_input_dims, action_nums))
-        layers.append(nn.Softmax(dim=-1))
-
-        self.mlp = nn.Sequential(*layers)
+        self.mlp = nn.Sequential(
+            nn.Linear(deep_input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], action_nums)
+        )
 
     def forward(self, input):
-        actions_value = self.mlp(self.bn_input(input))
+        q_values = self.mlp(self.bn_input(input))
 
-        return actions_value
+        return q_values
 
 class Continuous_Actor(nn.Module):
     def __init__(self, input_dims, action_nums):
@@ -49,18 +50,21 @@ class Continuous_Actor(nn.Module):
         self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
 
         deep_input_dims = self.input_dims + 1
-        layers = list()
         neuron_nums = [300, 300, 300]
-        for neuron_num in neuron_nums:
-            layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
-            layers.append(nn.ReLU())
-            deep_input_dims = neuron_num
 
-        layers.append(nn.Linear(deep_input_dims, action_nums))
-        layers.append(nn.Tanh())
-
-        self.mlp = nn.Sequential(*layers)
+        self.mlp = nn.Sequential(
+            nn.Linear(deep_input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], action_nums),
+            nn.Tanh(),
+        )
 
     def forward(self, input, discrete_a):
         obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
@@ -82,15 +86,18 @@ class Critic(nn.Module):
         layers = list()
 
         neuron_nums = [300, 300, 300]
-        for neuron_num in neuron_nums:
-            layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
-            layers.append(nn.ReLU())
-            deep_input_dims = neuron_num
-
-        layers.append(nn.Linear(deep_input_dims, 1))
-
-        self.mlp = nn.Sequential(*layers)
+        self.mlp = nn.Sequential(
+            nn.Linear(deep_input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], neuron_nums[2]),
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], 1)
+        )
 
     def forward(self, input, action, discrete_a):
         obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
@@ -256,12 +263,12 @@ class Hybrid_RL_Model():
                                                          b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
         q_next = self.Discrete_Actor_.forward(b_s_)
 
-        # 下一状态s的eval_net值
-        q_eval_next = self.Discrete_Actor.forward(b_s_)
-        max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
-        select_q_next = q_next.gather(1, max_b_a_next)
+        # # 下一状态s的eval_net值
+        # q_eval_next = self.Discrete_Actor.forward(b_s_)
+        # max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
+        # select_q_next = q_next.gather(1, max_b_a_next)
 
-        q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
+        q_target = b_r + self.gamma * q_next.max(1)[0]  # shape (batch, 1)
 
         # 训练eval_net
         d_a_loss = self.loss_func(q_eval, q_target.detach())
