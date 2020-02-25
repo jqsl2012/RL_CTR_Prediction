@@ -166,8 +166,8 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        transitions = torch.cat([features, c_actions, d_actions, rewards], dim=1)
-        rl_model.store_transition(transitions)
+        transitions = torch.cat([features.float(), c_actions, d_actions.float(), rewards], dim=1)
+        rl_model.store_transition(transitions, embedding_layer)
 
         td_error, c_loss, d_loss = rl_model.learn(embedding_layer)
         rl_model.soft_update(rl_model.Continuous_Actor, rl_model.Continuous_Actor_)

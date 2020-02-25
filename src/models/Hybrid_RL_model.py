@@ -190,34 +190,21 @@ class Hybrid_RL_Model():
         self.Continuous_Actor.eval()
         with torch.no_grad():
             action_mean = self.Continuous_Actor.forward(state, discrete_a)
-        random_seeds = torch.rand(size=[len(state), 1]).to(self.device)
-
         # random_action = torch.normal(action_mean, exploration_rate)
         random_action = torch.clamp(torch.normal(action_mean, exploration_rate), -1, 1)
 
-        c_actions = torch.where(random_seeds >= exploration_rate, action_mean, random_action)
-
-        ensemble_c_actions = torch.softmax(c_actions, dim=-1)  # 模型所需的动作
+        ensemble_c_actions = torch.softmax(random_action, dim=-1)  # 模型所需的动作
 
         self.Continuous_Actor.train()
 
-        return c_actions, ensemble_c_actions
+        return random_action, ensemble_c_actions
 
     def choose_discrete_action(self, state, exploration_rate):
         self.Discrete_Actor.eval()
         with torch.no_grad():
             action_values = self.Discrete_Actor.forward(state)
-
-        random_seeds = torch.rand(len(state), 1).to(self.device)
-
-        action_dist = Categorical(action_values)
-        actions = action_dist.sample()  # 分布产生的结果
-        random_d_actions = actions + 2  # 模型所需的动作
-
-        max_d_actions = torch.argsort(-action_values)[:, 0] + 2
-
-        ensemble_d_actions = torch.where(random_seeds >= exploration_rate, max_d_actions.view(-1, 1), random_d_actions.view(-1, 1))
-
+        random_values = torch.normal(action_values, exploration_rate)
+        ensemble_d_actions = torch.argsort(-random_values)[:, 0] + 2
         self.Discrete_Actor.train()
 
         return ensemble_d_actions.view(-1, 1)

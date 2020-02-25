@@ -269,8 +269,8 @@ class Hybrid_RL_Model():
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-    def store_transition(self, transitions): # 所有的值都应该弄成float
-        b_s = transitions[:, :self.field_nums]
+    def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
+        b_s = embedding_layer.forward(transitions[:, :self.field_nums])
         b_s_ = b_s
         b_a = transitions[:, self.field_nums: self.field_nums + self.c_a_action_nums]
         b_discrete_a = torch.unsqueeze(transitions[:, self.field_nums + self.c_a_action_nums + 1], 1)
