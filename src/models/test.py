@@ -101,3 +101,7 @@ lr_lamda = (init_lr - end_lr) / 500
 for i in range(500):
     print(init_lr - lr_lamda * (i + 1))
 
+beta = torch.min(torch.FloatTensor([1., 0.5 + 0.01]))
+print(beta)
+
+print(torch.min)
