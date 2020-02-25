@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.Hybrid_RL_model as hybrid_rl_model
+import src.models.Hybrid_RL_model_Prioritized_Relay as hybrid_rl_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -166,8 +166,8 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        action_rewards = torch.cat([c_actions, rewards], dim=1)
-        rl_model.store_transition(features, action_rewards, d_actions)
+        transitions = torch.cat([features, c_actions, d_actions, rewards], dim=1)
+        rl_model.store_transition(transitions)
 
         td_error, c_loss, d_loss = rl_model.learn(embedding_layer)
         rl_model.soft_update(rl_model.Continuous_Actor, rl_model.Continuous_Actor_)

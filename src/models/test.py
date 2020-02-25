@@ -96,10 +96,10 @@ print(torch.mean((l - l1).exp()))
 
 init_lr = 1e-2
 end_lr = 1e-4
-lr_lamda = (init_lr - end_lr) / 500
+lr_lamda = (init_lr - end_lr) / 400
 
 for i in range(500):
-    print(init_lr - lr_lamda * (i + 1))
+    print(max(init_lr - lr_lamda * (i + 1), end_lr))
 
 beta = torch.min(torch.FloatTensor([1., 0.5 + 0.01]))
 print(beta)
