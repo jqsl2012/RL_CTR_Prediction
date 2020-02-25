@@ -273,7 +273,7 @@ class Hybrid_RL_Model():
         b_s = embedding_layer.forward(transitions[:, :self.field_nums])
         b_s_ = b_s
         b_a = transitions[:, self.field_nums: self.field_nums + self.c_a_action_nums]
-        b_discrete_a = torch.unsqueeze(transitions[:, self.field_nums + self.c_a_action_nums + 1], 1)
+        b_discrete_a = torch.unsqueeze(transitions[:, self.field_nums + self.c_a_action_nums], 1)
         b_r = torch.unsqueeze(transitions[:, -1], dim=1)
 
         # critic
@@ -298,7 +298,7 @@ class Hybrid_RL_Model():
 
         td_errors = td_error_critic + td_error_d_a
 
-        self.memory.add(td_errors, transitions)
+        self.memory.add(td_errors.detach(), transitions)
 
     def choose_continuous_action(self, state, discrete_a, exploration_rate):
         self.Continuous_Actor.eval()
