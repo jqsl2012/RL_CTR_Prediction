@@ -111,17 +111,21 @@ class Memory(object):
     def sample(self, batch_size):
         total_p = torch.sum(self.prioritys_, dim=0)
 
-        min_prob = torch.min(self.prioritys_) / total_p
+        if self.memory_counter >= self.memory_size:
+            min_prob = torch.min(self.prioritys_)
+        else:
+            min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
-        sorted_priorities, sorted_indexs = torch.sort(self.prioritys_, dim=0)
+        sorted_priorities, sorted_indexs = torch.sort(-self.prioritys_, dim=0)
 
         choose_idxs = sorted_indexs[:batch_size, :]
-        batch = self.memory[choose_idxs]
+        batch = self.memory[choose_idxs].squeeze(1)
 
-        choose_priorities = sorted_priorities[:batch_size, :]
+        choose_priorities = -sorted_priorities[:batch_size, :]
 
         ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta)
+        print(ISweights)
         # if self.memory_counter >= self.memory_size:
         #     sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
         # else:
