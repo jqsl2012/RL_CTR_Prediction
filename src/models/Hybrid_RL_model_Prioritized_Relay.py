@@ -109,7 +109,7 @@ class Memory(object):
         self.prioritys_[memory_start: memory_end, :] = p
 
     def sample(self, batch_size):
-        total_p = torch.sum(self.prioritys_, dim=0)
+        # total_p = torch.sum(self.prioritys_, dim=0)
 
         if self.memory_counter >= self.memory_size:
             min_prob = torch.min(self.prioritys_)
@@ -125,7 +125,7 @@ class Memory(object):
         choose_priorities = -sorted_priorities[:batch_size, :]
 
         ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta)
-        print(ISweights)
+
         # if self.memory_counter >= self.memory_size:
         #     sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
         # else:
@@ -297,7 +297,7 @@ class Hybrid_RL_Model():
                                                            b_discrete_a)
         q_critic = self.Critic.forward(b_s, b_a, b_discrete_a)
 
-        td_error_critic = q_critic - q_target_critic
+        td_error_critic = q_target_critic - q_critic
 
         # D_A
         q_eval_d_a = self.Discrete_Actor.forward(b_s).gather(1,
@@ -309,7 +309,7 @@ class Hybrid_RL_Model():
 
         q_target_d_a = b_r + self.gamma * select_q_next  # shape (batch, 1)
 
-        td_error_d_a = q_eval_d_a - q_target_d_a
+        td_error_d_a = q_target_d_a - q_eval_d_a
 
         td_errors = td_error_critic + td_error_d_a
 
@@ -374,7 +374,7 @@ class Hybrid_RL_Model():
 
     def learn(self, embedding_layer):
         # sample
-        tree_idx, batch_memory, ISweights = self.memory.sample(self.batch_size)
+        choose_idx, batch_memory, ISweights = self.memory.sample(self.batch_size)
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
         b_a = batch_memory[:, self.field_nums: self.field_nums + self.c_a_action_nums]
@@ -395,7 +395,8 @@ class Hybrid_RL_Model():
         q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
 
         # 训练eval_net
-        d_a_loss = self.loss_func(q_eval, q_target.detach())
+        d_a_td_error = (q_target - q_eval).detach()
+        d_a_loss = ISweights * self.loss_func(q_eval, q_target.detach())
 
         self.optimizer_d_a.zero_grad()
         d_a_loss.backward()
@@ -410,13 +411,14 @@ class Hybrid_RL_Model():
                                                            b_discrete_a)
         q = self.Critic.forward(b_s, b_a, b_discrete_a)
 
-        td_error = self.loss_func(q, q_target.detach())
+        critic_td_error = (q_target - q).detach()
+        critic_loss = ISweights * self.loss_func(q, q_target.detach())
 
         self.optimizer_c.zero_grad()
-        td_error.backward()
+        critic_loss.backward()
         self.optimizer_c.step()
 
-        td_error_r = td_error.item()
+        critic_loss_r = critic_loss.item()
 
         # C_A
         c_a_loss = -self.Critic.forward(b_s, self.Continuous_Actor.forward(b_s, b_discrete_a), b_discrete_a).mean()
@@ -426,7 +428,11 @@ class Hybrid_RL_Model():
         self.optimizer_c_a.step()
         c_a_loss_r = c_a_loss.item()
 
-        return td_error_r, c_a_loss_r, d_a_loss_r
+        new_p = d_a_td_error + critic_td_error
+
+        self.memory.batch_update(choose_idx, new_p)
+
+        return critic_loss_r, c_a_loss_r, d_a_loss_r
 
 
 class OrnsteinUhlenbeckNoise:
