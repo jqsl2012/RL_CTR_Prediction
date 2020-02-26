@@ -81,7 +81,7 @@ class Memory(object):
         self.epsilon = 1e-3 # 防止出现zero priority
         self.alpha = 0.6 # 取值范围(0,1)，表示td error对priority的影响
         self.beta = 0.4 # important sample， 从初始值到1
-        self.beta_increment_per_sampling = 0.001
+        self.beta_increment_per_sampling = 0.0001
         self.abs_err_upper = 1 # abs_err_upper和epsilon ，表明p优先级值的范围在[epsilon,abs_err_upper]之间，可以控制也可以不控制
 
         self.memory_size = memory_size
@@ -97,16 +97,25 @@ class Memory(object):
         return torch.pow(torch.abs(td_error) + self.epsilon, self.alpha)
 
     def add(self, td_error, transitions): # td_error是tensor矩阵
+        transition_lens = len(transitions)
         p = self.get_priority(td_error)
 
         memory_start = self.memory_counter % self.memory_size
         memory_end = (self.memory_counter + len(transitions)) % self.memory_size
 
-        self.memory[memory_start: memory_end, :] = transitions
+        if memory_end > memory_start:
+            self.memory[memory_start: memory_end, :] = transitions
+            self.prioritys_[memory_start: memory_end, :] = p
+        else:
+            replace_len_1 = self.memory_size - memory_start
+            self.memory[memory_start: self.memory_size, :] = transitions[0: replace_len_1]
+            self.prioritys_[memory_start: self.memory_size, :] = p[0: replace_len_1]
+
+            replace_len_2 = transition_lens - replace_len_1
+            self.memory[:replace_len_2, :] = transitions[replace_len_1: transition_lens]
+            self.prioritys_[:replace_len_2, :] = p[replace_len_1: transition_lens]
 
         self.memory_counter += len(transitions)
-
-        self.prioritys_[memory_start: memory_end, :] = p
 
     def sample(self, batch_size):
         # total_p = torch.sum(self.prioritys_, dim=0)
@@ -119,12 +128,13 @@ class Memory(object):
 
         sorted_priorities, sorted_indexs = torch.sort(-self.prioritys_, dim=0)
 
-        choose_idxs = sorted_indexs[:batch_size, :]
-        batch = self.memory[choose_idxs].squeeze(1)
+        choose_idxs = sorted_indexs[:batch_size, :].squeeze(1)
+
+        batch = self.memory[choose_idxs]
 
         choose_priorities = -sorted_priorities[:batch_size, :]
 
-        ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta)
+        ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta).detach()
 
         # if self.memory_counter >= self.memory_size:
         #     sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
@@ -165,7 +175,6 @@ class Discrete_Actor(nn.Module):
 
         return q_values
 
-
 class Continuous_Actor(nn.Module):
     def __init__(self, input_dims, action_nums):
         super(Continuous_Actor, self).__init__()
@@ -196,7 +205,6 @@ class Continuous_Actor(nn.Module):
         out = self.mlp(obs)
 
         return out
-
 
 class Critic(nn.Module):
     def __init__(self, input_dims, c_action_nums):
@@ -229,7 +237,6 @@ class Critic(nn.Module):
         q_out = self.mlp(cat)
 
         return q_out
-
 
 class Hybrid_RL_Model():
     def __init__(
@@ -303,11 +310,11 @@ class Hybrid_RL_Model():
         q_eval_d_a = self.Discrete_Actor.forward(b_s).gather(1,
                                                          b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
         q_next_d_a = self.Discrete_Actor_.forward(b_s_)
-        q_eval_next = self.Discrete_Actor.forward(b_s_)
-        max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
-        select_q_next = q_next_d_a.gather(1, max_b_a_next)
+        # q_eval_next = self.Discrete_Actor.forward(b_s_)
+        # max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
+        # select_q_next = q_next_d_a.gather(1, max_b_a_next)
 
-        q_target_d_a = b_r + self.gamma * select_q_next  # shape (batch, 1)
+        q_target_d_a = b_r + self.gamma * q_next_d_a.max(1)[0].view(-1, 1)  # shape (batch, 1)
 
         td_error_d_a = q_target_d_a - q_eval_d_a
 
@@ -388,15 +395,15 @@ class Hybrid_RL_Model():
         q_next = self.Discrete_Actor_.forward(b_s_)
 
         # # # 下一状态s的eval_net值
-        q_eval_next = self.Discrete_Actor.forward(b_s_)
-        max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
-        select_q_next = q_next.gather(1, max_b_a_next)
+        # q_eval_next = self.Discrete_Actor.forward(b_s_)
+        # max_b_a_next = torch.unsqueeze(torch.max(q_eval_next, 1)[1], 1)  # 选择最大Q的动作
+        # select_q_next = q_next.gather(1, max_b_a_next)
 
-        q_target = b_r + self.gamma * select_q_next  # shape (batch, 1)
+        q_target = b_r + self.gamma * q_next.max(1)[0].view(-1, 1)  # shape (batch, 1)
 
         # 训练eval_net
         d_a_td_error = (q_target - q_eval).detach()
-        d_a_loss = ISweights * self.loss_func(q_eval, q_target.detach())
+        d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
 
         self.optimizer_d_a.zero_grad()
         d_a_loss.backward()
@@ -412,7 +419,7 @@ class Hybrid_RL_Model():
         q = self.Critic.forward(b_s, b_a, b_discrete_a)
 
         critic_td_error = (q_target - q).detach()
-        critic_loss = ISweights * self.loss_func(q, q_target.detach())
+        critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()
