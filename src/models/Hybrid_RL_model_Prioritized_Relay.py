@@ -75,11 +75,8 @@ class SumTree(object):
         return self.sum_tree[0] # root's total priority
 
 class Memory(object):
-    def __init__(self, nodes, transition_lens, device):
-        self.sum_tree = SumTree(nodes, transition_lens, device)
-
+    def __init__(self, memory_size, transition_lens, device):
         self.device = device
-        self.nodes = nodes
         self.transition_lens = transition_lens # 存储的数据长度
         self.epsilon = 1e-3 # 防止出现zero priority
         self.alpha = 0.6 # 取值范围(0,1)，表示td error对priority的影响
@@ -87,41 +84,53 @@ class Memory(object):
         self.beta_increment_per_sampling = 0.001
         self.abs_err_upper = 1 # abs_err_upper和epsilon ，表明p优先级值的范围在[epsilon,abs_err_upper]之间，可以控制也可以不控制
 
+        self.memory_size = memory_size
+        self.memory_counter = 0
+
+        self.prioritys_ = torch.zeros(size=[memory_size, 1]).to(self.device)
+        # indexs = torch.range(0, self.memory_size)
+        # self.prioritys_[:, 1] = indexs
+
+        self.memory = torch.zeros(size=[memory_size, transition_lens]).to(self.device)
+
     def get_priority(self, td_error):
         return torch.pow(torch.abs(td_error) + self.epsilon, self.alpha)
 
     def add(self, td_error, transitions): # td_error是tensor矩阵
         p = self.get_priority(td_error)
-        self.sum_tree.add_leaf(p, transitions)
+
+        memory_start = self.memory_counter % self.memory_size
+        memory_end = (self.memory_counter + len(transitions)) % self.memory_size
+
+        self.memory[memory_start: memory_end, :] = transitions
+
+        self.memory_counter += len(transitions)
+
+        self.prioritys_[memory_start: memory_end, :] = p
 
     def sample(self, batch_size):
-        batch = torch.zeros(size=[batch_size, self.transition_lens]).to(self.device)
-        tree_idx = torch.zeros(size=[batch_size, 1]).to(self.device)
-        ISweights = torch.zeros(size=[batch_size, 1]).to(self.device)
+        total_p = torch.sum(self.prioritys_, dim=0)
 
-        segment = self.sum_tree.total_p / batch_size
-
-        min_prob = torch.min(self.sum_tree.sum_tree[-self.nodes:]) / self.sum_tree.total_p
+        min_prob = torch.min(self.prioritys_) / total_p
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
-        for i in range(batch_size):
-            a = segment * i
-            b = segment * (i + 1)
+        sorted_priorities, sorted_indexs = torch.sort(self.prioritys_, dim=0)
 
-            v = random.uniform(a, b)
-            idx, p, data = self.sum_tree.get_leaf(v)
+        choose_idxs = sorted_indexs[:batch_size, :]
+        batch = self.memory[choose_idxs]
 
-            prob = p / self.sum_tree.total_p
+        choose_priorities = sorted_priorities[:batch_size, :]
 
-            ISweights[i] = torch.pow(torch.div(prob, min_prob), -self.beta)
-            batch[i], tree_idx[i] = data, idx
+        ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta)
+        # if self.memory_counter >= self.memory_size:
+        #     sample_index = torch.LongTensor(random.sample(range(self.memory_size), self.batch_size)).to(self.device)
+        # else:
+        #     sample_index = torch.LongTensor(random.sample(range(self.memory_counter), self.batch_size)).to(self.device)
+        return choose_idxs, batch, ISweights
 
-        return tree_idx, batch, ISweights
-
-    def batch_update(self, tree_idx_start, tree_idx_end, td_errors):
+    def batch_update(self, choose_idx, td_errors):
         p = self.get_priority(td_errors)
-        self.sum_tree.update(tree_idx_start, tree_idx_end, p)
-
+        self.prioritys_[choose_idx, :] = p
 
 class Discrete_Actor(nn.Module):
     def __init__(self, input_dims, action_nums):
