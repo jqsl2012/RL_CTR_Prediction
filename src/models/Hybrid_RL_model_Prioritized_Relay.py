@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 from torch.distributions import MultivariateNormal, Categorical
-
+import datetime
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -18,19 +18,20 @@ def setup_seed(seed):
 setup_seed(1)
 
 class SumTree(object):
-    def __init__(self, nodes, transition_lens): # transition_lens = feature_nums + c_a_nums + d_a_nums + reward_nums
+    def __init__(self, nodes, transition_lens, device): # transition_lens = feature_nums + c_a_nums + d_a_nums + reward_nums
         self.nodes = nodes # leaf nodes
+        self.device = device
 
-        self.sum_tree = torch.zeros(size=[2 * self.nodes - 1, 1]) # parents nodes = nodes - 1
+        self.sum_tree = torch.zeros(size=[2 * self.nodes - 1, 1]).to(self.device) # parents nodes = nodes - 1
 
-        self.data = torch.zeros(size=[self.nodes, transition_lens])
+        self.data = torch.zeros(size=[self.nodes, transition_lens]).to(self.device)
 
         self.data_pointer = 0
 
     def add_leaf(self, p, transitions): # p-priority
         tree_idx_start = self.data_pointer + self.nodes - 1 #python从0开始索引，初始时tree_idx表示第一个叶节点的索引值，样本按叶子结点依次向后排
         tree_idx_end = tree_idx_start + len(transitions)
-        self.data[self.data_pointer: self.data_pointer + len(transitions)] = transitions
+        self.data[self.data_pointer: self.data_pointer + len(transitions), :] = transitions
         self.update(tree_idx_start, tree_idx_end, p)
 
         self.data_pointer += len(transitions)
@@ -42,11 +43,11 @@ class SumTree(object):
         changes = p - self.sum_tree[tree_idx_start: tree_idx_end]
         self.sum_tree[tree_idx_start: tree_idx_end] = p
 
-        temp_tree_leaf_idx = torch.range(tree_idx_start, tree_idx_end)
-        while True:
-            parents_tree_idx = (temp_tree_leaf_idx - 1) // 2
-
-            self.sum_tree[parents_tree_idx] += changes # 这里要改，因为parents_tree_idx会有相同的部分
+        temp_tree_idxs = np.arange(tree_idx_start, tree_idx_end)
+        for i, tree_idx in enumerate(temp_tree_idxs):
+            while tree_idx != 0:
+                tree_idx = (tree_idx - 1) // 2
+                self.sum_tree[tree_idx] += changes[i] # 这里要改，因为parents_tree_idx会有相同的部分
 
     def get_leaf(self, v): # v-随机选择的p值，用于抽取data， 只有一条
         parent_idx = 0
@@ -74,9 +75,10 @@ class SumTree(object):
         return self.sum_tree[0] # root's total priority
 
 class Memory(object):
-    def __init__(self, nodes, transition_lens):
-        self.sum_tree = SumTree(nodes, transition_lens)
+    def __init__(self, nodes, transition_lens, device):
+        self.sum_tree = SumTree(nodes, transition_lens, device)
 
+        self.device = device
         self.nodes = nodes
         self.transition_lens = transition_lens # 存储的数据长度
         self.epsilon = 1e-3 # 防止出现zero priority
@@ -93,9 +95,9 @@ class Memory(object):
         self.sum_tree.add_leaf(p, transitions)
 
     def sample(self, batch_size):
-        batch = torch.zeros(size=[batch_size, self.transition_lens])
-        tree_idx = torch.zeros(size=[batch_size, 1])
-        ISweights = torch.zeros(size=[batch_size, 1])
+        batch = torch.zeros(size=[batch_size, self.transition_lens]).to(self.device)
+        tree_idx = torch.zeros(size=[batch_size, 1]).to(self.device)
+        ISweights = torch.zeros(size=[batch_size, 1]).to(self.device)
 
         segment = self.sum_tree.total_p / batch_size
 
@@ -114,7 +116,7 @@ class Memory(object):
             ISweights[i] = torch.pow(torch.div(prob, min_prob), -self.beta)
             batch[i], tree_idx[i] = data, idx
 
-        return batch, tree_idx, ISweights
+        return tree_idx, batch, ISweights
 
     def batch_update(self, tree_idx_start, tree_idx_end, td_errors):
         p = self.get_priority(td_errors)
@@ -252,7 +254,7 @@ class Hybrid_RL_Model():
 
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
-        self.memory = Memory(self.memory_size, self.field_nums + self.c_a_action_nums + 2)
+        self.memory = Memory(self.memory_size, self.field_nums + self.c_a_action_nums + 2, self.device)
 
         self.Continuous_Actor = Continuous_Actor(self.input_dims, self.c_a_action_nums).to(self.device)
         self.Discrete_Actor = Discrete_Actor(self.input_dims, self.d_actions_nums).to(self.device)
@@ -270,7 +272,7 @@ class Hybrid_RL_Model():
         self.loss_func = nn.MSELoss(reduction='mean')
 
     def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
-        b_s = embedding_layer.forward(transitions[:, :self.field_nums])
+        b_s = embedding_layer.forward(transitions[:, :self.field_nums].long())
         b_s_ = b_s
         b_a = transitions[:, self.field_nums: self.field_nums + self.c_a_action_nums]
         b_discrete_a = torch.unsqueeze(transitions[:, self.field_nums + self.c_a_action_nums], 1)
@@ -299,6 +301,7 @@ class Hybrid_RL_Model():
         td_errors = td_error_critic + td_error_d_a
 
         self.memory.add(td_errors.detach(), transitions)
+
 
     def choose_continuous_action(self, state, discrete_a, exploration_rate):
         self.Continuous_Actor.eval()
