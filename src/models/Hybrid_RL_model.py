@@ -33,13 +33,16 @@ class Discrete_Actor(nn.Module):
             nn.ReLU(),
             nn.Linear(neuron_nums[1], neuron_nums[2]),
             nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], action_nums),
-            nn.Softmax(dim=-1)
+            nn.ReLU()
         )
 
+        self.value_layer = nn.Linear(neuron_nums[2], 1)
+        self.advantage_layer = nn.Linear(neuron_nums[2], action_nums)
+
     def forward(self, input):
-        q_values = self.mlp(self.bn_input(input))
+        mlp_out = self.mlp(self.bn_input(input))
+
+        q_values = self.value_layer(mlp_out) + (self.advantage_layer(mlp_out) - self.advantage_layer(mlp_out).mean(dim=-1))
 
         return q_values
 
@@ -95,17 +98,26 @@ class Critic(nn.Module):
             nn.ReLU(),
             nn.Linear(neuron_nums[1], neuron_nums[2]),
             nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], 1)
+            nn.ReLU()
         )
+
+        self.value_layer = nn.Linear(neuron_nums[2], 1)
+        self.advantage_layer = nn.Linear(neuron_nums[2], 1)
 
     def forward(self, input, action, discrete_a):
         obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
-        cat = torch.cat([obs, action], dim=1)
 
-        q_out = self.mlp(cat)
+        mlp_out = self.mlp(obs)
 
-        return q_out
+        value = self.value_layer(mlp_out)
+
+        cat = torch.cat([mlp_out, action], dim=1)
+
+        advantage = self.advantage_layer(cat)
+
+        q_values = value + advantage
+
+        return q_values
 
 class Hybrid_RL_Model():
     def __init__(
