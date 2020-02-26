@@ -33,16 +33,12 @@ class Discrete_Actor(nn.Module):
             nn.ReLU(),
             nn.Linear(neuron_nums[1], neuron_nums[2]),
             nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], action_nums)
         )
 
-        self.value_layer = nn.Linear(neuron_nums[2], 1)
-        self.advantage_layer = nn.Linear(neuron_nums[2], action_nums)
-
     def forward(self, input):
-        mlp_out = self.mlp(self.bn_input(input))
-
-        q_values = self.value_layer(mlp_out) + (self.advantage_layer(mlp_out) - self.advantage_layer(mlp_out).mean(dim=-1))
+        q_values = self.mlp(self.bn_input(input))
 
         return q_values
 
@@ -72,7 +68,6 @@ class Continuous_Actor(nn.Module):
 
     def forward(self, input, discrete_a):
         obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
-
         out = self.mlp(obs)
 
         return out
@@ -98,24 +93,16 @@ class Critic(nn.Module):
             nn.ReLU(),
             nn.Linear(neuron_nums[1], neuron_nums[2]),
             nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Linear(neuron_nums[2], 1)
         )
-
-        self.value_layer = nn.Linear(neuron_nums[2], 1)
-        self.advantage_layer = nn.Linear(neuron_nums[2], 1)
 
     def forward(self, input, action, discrete_a):
         obs = self.bn_input(torch.cat([input, discrete_a], dim=1))
 
-        mlp_out = self.mlp(obs)
+        cat = torch.cat([obs, action], dim=1)
 
-        value = self.value_layer(mlp_out)
-
-        cat = torch.cat([mlp_out, action], dim=1)
-
-        advantage = self.advantage_layer(cat)
-
-        q_values = value + advantage
+        q_values = self.mlp(cat)
 
         return q_values
 

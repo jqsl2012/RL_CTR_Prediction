@@ -146,7 +146,10 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
 
 def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, device):
-    total_loss = 0
+    total_C_loss = 0
+    total_c_a_loss = 0
+    total_d_a_loss = 0
+
     log_intervals = 0
     total_rewards = 0
     targets, predicts = list(), list()
@@ -174,14 +177,18 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         rl_model.soft_update(rl_model.Discrete_Actor, rl_model.Discrete_Actor_)
         rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
-        total_loss += td_error  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        total_C_loss += td_error  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        total_c_a_loss += c_loss
+        total_d_a_loss += d_loss
+
         log_intervals += 1
 
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
+    return total_C_loss / log_intervals, total_c_a_loss / log_intervals, total_d_a_loss / log_intervals,\
+           total_rewards / log_intervals, roc_auc_score(targets, predicts)
 
 
 def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
@@ -268,40 +275,40 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     FM.load_state_dict(FM_pretrain_params)
     FM.eval()
 
-    AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
-    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
-    AFM.load_state_dict(AFM_pretrain_params)
-    AFM.eval()
-
-    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
-    WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
-    WandD.load_state_dict(WandD_pretrain_params)
-    WandD.eval()
-
-    DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
-    DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
-    DeepFM.load_state_dict(DeepFM_pretrain_params)
-    DeepFM.eval()
-
-    FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
-    FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
-    FNN.load_state_dict(FNN_pretrain_params)
-    FNN.eval()
-
-    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
-    IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
-    IPNN.load_state_dict(IPNN_pretrain_params)
-    IPNN.eval()
-
-    OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
-    OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
-    OPNN.load_state_dict(OPNN_pretrain_params)
-    OPNN.eval()
-
-    DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
-    DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
-    DCN.load_state_dict(DCN_pretrain_params)
-    DCN.eval()
+    # AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
+    # AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    # AFM.load_state_dict(AFM_pretrain_params)
+    # AFM.eval()
+    #
+    # WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    # WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    # WandD.load_state_dict(WandD_pretrain_params)
+    # WandD.eval()
+    #
+    # DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
+    # DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
+    # DeepFM.load_state_dict(DeepFM_pretrain_params)
+    # DeepFM.eval()
+    #
+    # FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
+    # FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
+    # FNN.load_state_dict(FNN_pretrain_params)
+    # FNN.eval()
+    #
+    # IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    # IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
+    # IPNN.load_state_dict(IPNN_pretrain_params)
+    # IPNN.eval()
+    #
+    # OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
+    # OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
+    # OPNN.load_state_dict(OPNN_pretrain_params)
+    # OPNN.eval()
+    #
+    # DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
+    # DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
+    # DCN.load_state_dict(DCN_pretrain_params)
+    # DCN.eval()
 
     model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
     # model_dict = {0: WandD.to(device), 1: DeepFM.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
@@ -329,7 +336,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
+        train_average_C_loss, train_average_c_a_loss, train_average_d_a_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
 
@@ -347,7 +354,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
         valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training average rewards',
+        print('epoch:', epoch_i, 'Critic loss:', train_average_C_loss, 'C loss:', train_average_c_a_loss,
+              'D loss:', train_average_d_a_loss, 'training average rewards',
               train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
