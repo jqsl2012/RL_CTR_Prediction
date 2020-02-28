@@ -124,12 +124,12 @@ class Memory(object):
         if self.memory_counter >= self.memory_size:
             min_prob = torch.min(self.prioritys_)
             # 采样概率分布
-            P = torch.div(self.prioritys_, total_p).numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P))
+            P = torch.div(self.prioritys_, total_p).squeeze(1).cpu().numpy()
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P)).long().to(self.device)
         else:
             min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
-            P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P))
+            P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).squeeze(1).cpu().numpy()
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
