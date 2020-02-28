@@ -5,6 +5,7 @@ import numpy as np
 import random
 from torch.distributions import MultivariateNormal, Categorical
 import datetime
+from torch.distributions import Normal, Categorical
 
 def setup_seed(seed):
     torch.manual_seed(seed)
@@ -108,7 +109,28 @@ class Memory(object):
 
         self.prioritys_[memory_start: memory_end, :] = p
 
-    def sample(self, batch_size):
+    def stochastic_sample(self, batch_size):
+        total_p = torch.sum(self.prioritys_, dim=0)
+
+        if self.memory_counter >= self.memory_size:
+            min_prob = torch.min(self.prioritys_)
+            # 采样概率分布
+            P = torch.div(self.prioritys_, total_p).numpy()
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P))
+        else:
+            min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
+            P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).numpy()
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P))
+
+        self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
+
+        batch = self.memory[sample_indexs]
+        choose_priorities = self.prioritys_[sample_indexs]
+        ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta)
+
+        return sample_indexs, batch, ISweights
+
+    def greedy_sample(self, batch_size):
         # total_p = torch.sum(self.prioritys_, dim=0)
 
         if self.memory_counter >= self.memory_size:
@@ -229,6 +251,61 @@ class Critic(nn.Module):
         q_out = self.mlp(cat)
 
         return q_out
+
+
+# class multi_models(nn.Module):
+#     def __init__(self, input_dims, action_nums):
+#         super(multi_models, self).__init__()
+#         self.input_dims = input_dims
+#         self.c_action_dims = action_nums
+#         self.d_action_dims = action_nums - 1
+#
+#         self.bn_input = nn.BatchNorm1d(self.input_dims)
+#
+#         neuron_nums = [300, 300, 300]
+#         self.mlp = nn.Sequential(
+#             nn.Linear(self.input_dims, neuron_nums[0]),
+#             nn.BatchNorm1d(neuron_nums[0]),
+#             nn.ReLU(),
+#             nn.Linear(neuron_nums[0], neuron_nums[1]),
+#             nn.BatchNorm1d(neuron_nums[1]),
+#             nn.ReLU(),
+#             nn.Linear(neuron_nums[1], neuron_nums[2]),
+#             nn.BatchNorm1d(neuron_nums[2]),
+#             nn.ReLU()
+#         )
+#
+#         self.critic_layer = nn.Linear(neuron_nums[2] + self.c_action_dims, 1)
+#         self.c_action_layer = nn.Sequential(
+#             nn.Linear(neuron_nums[2], self.c_action_dims),
+#             nn.Tanh()
+#         )
+#         self.d_action_layer = nn.Sequential(
+#             nn.Linear(neuron_nums[2], self.d_action_dims),
+#             nn.Softmax(dim=-1)
+#         )
+#
+#         self.c_action_std = torch.ones(size=[1, self.c_action_dims])
+#
+#     def act(self, input):
+#         obs = self.bn_input(input)
+#
+#         mlp_out = self.mlp(obs)
+#
+#         c_actions_means = self.c_action_layer(mlp_out)
+#         c_action_dist = Normal(c_actions_means, F.softplus(self.action_std))
+#         c_actions = torch.clamp(c_action_dist.sample(), -1, 1) # 用于返回训练
+#         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
+#
+#         d_actions_q_values = self.d_action_layer(mlp_out)
+#         d_action_dist = Categorical(d_actions_q_values)
+#         d_actions = d_action_dist.sample()
+#         ensemble_d_actions = d_actions + 2
+#
+#         return c_actions_means, d_actions_q_values
+
+
+
 
 
 class Hybrid_RL_Model():
@@ -374,7 +451,7 @@ class Hybrid_RL_Model():
 
     def learn(self, embedding_layer):
         # sample
-        choose_idx, batch_memory, ISweights = self.memory.sample(self.batch_size)
+        choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
         b_a = batch_memory[:, self.field_nums: self.field_nums + self.c_a_action_nums]

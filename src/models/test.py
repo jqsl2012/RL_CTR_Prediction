@@ -105,3 +105,4 @@ beta = torch.min(torch.FloatTensor([1., 0.5 + 0.01]))
 print(beta)
 
 print(torch.min)
+
