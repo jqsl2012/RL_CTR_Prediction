@@ -62,8 +62,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
     pretrain_model_len = len(model_dict)  # 有多少个预训练模型
 
-    return_prob_weights = torch.zeros(size=[len(features), pretrain_model_len]).to(device)
-
     pretrain_y_preds = {}
     for i in range(pretrain_model_len):
         pretrain_y_preds[i] = model_dict[i](features).detach()
@@ -87,8 +85,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
             y_preds[with_action_indexs, :] = current_y_preds
 
-            return_prob_weights[with_action_indexs] = current_prob_weights
-
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
@@ -106,9 +102,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_softmax_weights = torch.softmax(
                 sort_prob_weights[with_action_indexs][:, :i] * -1, dim=1
             ).to(device)  # 再进行softmax
-
-            for k in range(i):
-                return_prob_weights[with_action_indexs, current_choose_models[:, k]] = current_softmax_weights[:, k]
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
 
@@ -142,7 +135,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
         rewards[with_action_indexs, :] = current_basic_rewards
 
-    return y_preds, return_prob_weights, rewards
+    return y_preds, rewards
 
 
 def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, device):
@@ -157,20 +150,20 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         embedding_vectors = embedding_layer.forward(features)
 
-        c_actions, ensemble_d_actions, d_q_values, ensemble_c_actions = rl_model.choose_action(embedding_vectors)
+        c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors)
 
-        y_preds, prob_weights_new, rewards = \
+        y_preds, rewards = \
             generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, labels, device, mode='train')
 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_c_actions, rewards], dim=1)
+        transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_d_actions.float(), rewards], dim=1)
+
         rl_model.store_transition(transitions, embedding_layer)
 
         critic_loss, actor_loss = rl_model.learn(embedding_layer)
-        rl_model.soft_update(rl_model.Continuous_Actor, rl_model.Continuous_Actor_)
-        rl_model.soft_update(rl_model.Discrete_Actor, rl_model.Discrete_Actor_)
+        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
         rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
         total_critic_loss += critic_loss
@@ -196,7 +189,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
 
-            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -220,7 +213,7 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
 
-            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。

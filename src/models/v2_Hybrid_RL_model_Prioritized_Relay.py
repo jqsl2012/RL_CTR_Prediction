@@ -114,7 +114,7 @@ class Critic(nn.Module):
         self.c_action_nums = c_action_nums
         self.d_action_nums = d_action_nums
 
-        self.bn_input = nn.BatchNorm1d(self.input_dims + 1)
+        self.bn_input = nn.BatchNorm1d(self.input_dims)
 
         deep_input_dims = self.input_dims + self.c_action_nums + self.d_action_nums
 
@@ -163,7 +163,7 @@ class hybrid_actors(nn.Module):
 
         self.c_action_layer = nn.Sequential(
             nn.Linear(neuron_nums[2], self.c_action_dims),
-            nn.Tanh()
+            nn.Softmax(dim=-1)
         )
         self.d_action_layer = nn.Sequential(
             nn.Linear(neuron_nums[2], self.d_action_dims),
@@ -172,7 +172,7 @@ class hybrid_actors(nn.Module):
 
     def evaluate(self, input):
         obs = self.bn_input(input)
-        mlp_out = self.mlp(obs)
+        mlp_out = self.feature_exact_layers(obs)
 
         c_actions_means = self.c_action_layer(mlp_out)
         d_actions_q_values = self.d_action_layer(mlp_out)
@@ -216,12 +216,12 @@ class Hybrid_RL_Model():
 
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
-        self.memory = Memory(self.memory_size, self.field_nums + self.c_action_nums + self.d_action_nums + 1, self.device)
+        self.memory = Memory(self.memory_size, self.field_nums + self.c_action_nums + self.d_action_nums + 2, self.device)
 
         self.Hybrid_Actor = hybrid_actors(self.input_dims, self.c_action_nums).to(self.device)
         self.Critic = Critic(self.input_dims, self.c_action_nums, self.d_action_nums).to(self.device)
 
-        self.Hybrid_Actor = hybrid_actors(self.input_dims, self.c_action_nums).to(self.device)
+        self.Hybrid_Actor_ = hybrid_actors(self.input_dims, self.c_action_nums).to(self.device)
         self.Critic_ = Critic(self.input_dims, self.c_action_nums,  self.d_action_nums).to(self.device)
 
         # 优化器
@@ -230,41 +230,31 @@ class Hybrid_RL_Model():
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-        self.c_action_std = torch.ones(size=[1, self.c_action_nums])
+        self.c_action_std = torch.ones(size=[1, self.c_action_nums]).to(self.device)
 
     def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
         b_s = embedding_layer.forward(transitions[:, :self.field_nums].long())
         b_s_ = b_s
         b_c_a = transitions[:, self.field_nums: self.field_nums + self.c_action_nums]
         b_d_a = transitions[:, self.field_nums + self.c_action_nums: self.field_nums + self.c_action_nums + self.d_action_nums]
-        b_discrete_a = torch.unsqueeze(transitions[:, self.field_nums + self.c_action_nums + self.d_action_nums], 1)
         b_r = torch.unsqueeze(transitions[:, -1], dim=1)
-
-        # critic
-        q_target_critic = b_r + self.gamma * self.Critic_.evaluate(b_s_, self.Hybrid_Actor.evaluate(b_s_))
-        q_critic = self.Critic.evaluate(b_s, b_c_a, b_d_a)
-        td_error_critic = q_target_critic - q_critic
 
         # current state's action_values
         c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
-        # next state's action_values
-        c_actions_means_, d_actions_q_values_ = self.Hybrid_Actor.evaluate(b_s)
 
-        # D_A
-        q_eval_d_a = d_actions_q_values.gather(1,
-                                                         b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
-        q_next_d_a = d_actions_q_values_
-        q_target_d_a = b_r + self.gamma * q_next_d_a.max(1)[0].view(-1, 1)  # shape (batch, 1)
-        td_error_d_a = q_target_d_a - q_eval_d_a
+        # critic
+        q_target_critic = b_r + self.gamma * self.Critic_.evaluate(b_s_, c_actions_means, d_actions_q_values)
+        q_critic = self.Critic.evaluate(b_s, b_c_a, b_d_a)
+        td_error_critic = q_target_critic - q_critic
 
-        td_errors = td_error_critic + td_error_d_a
+        td_errors = td_error_critic
 
         self.memory.add(td_errors.detach(), transitions)
 
-    def choose_action(self, state, discrete_a):
+    def choose_action(self, state):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
-            c_actions_mean, d_q_values = self.Hybrid_Actor.evaluate(state, discrete_a)
+            c_actions_mean, d_q_values = self.Hybrid_Actor.evaluate(state)
 
         c_action_dist = Normal(c_actions_mean, self.c_action_std)
         c_actions = torch.clamp(c_action_dist.sample(), -1, 1)  # 用于返回训练
@@ -275,8 +265,7 @@ class Hybrid_RL_Model():
         ensemble_d_actions = d_actions + 2
 
         self.Hybrid_Actor.train()
-
-        return c_actions, ensemble_d_actions, d_q_values, ensemble_c_actions.view(-1, 1)
+        return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions.view(-1, 1)
 
     def choose_best_action(self, state):
         self.Hybrid_Actor.eval()
@@ -297,16 +286,16 @@ class Hybrid_RL_Model():
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
-        b_a = batch_memory[:, self.field_nums: self.field_nums + self.c_action_nums]
+        b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.c_action_nums]
         b_d_a = batch_memory[:, self.field_nums + self.c_action_nums: self.field_nums + self.c_action_nums + self.d_action_nums]
         b_discrete_a = torch.unsqueeze(batch_memory[:, self.field_nums + self.c_action_nums] + self.d_action_nums, 1)
         b_r = torch.unsqueeze(batch_memory[:, -1], 1)
         b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
 
         # Critic
-        # evaluate_discrete_action = (torch.argsort(-self.Discrete_Actor_.forward(b_s_))[:, 0] + 2).view(-1, 1).float()
-        q_target = b_r + self.gamma * self.Critic_.forward(b_s_, self.Hybrid_Actor.evaluate(b_s_))
-        q = self.Critic.evaluate(b_s, b_a, b_discrete_a)
+        c_actions_means_for_critic, d_actions_q_values_for_critic = self.Hybrid_Actor.evaluate(b_s)
+        q_target = b_r + self.gamma * self.Critic_.evaluate(b_s_, c_actions_means_for_critic, d_actions_q_values_for_critic)
+        q = self.Critic.evaluate(b_s, b_c_a, b_d_a)
 
         critic_td_error = (q_target - q).detach()
         critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
@@ -325,14 +314,19 @@ class Hybrid_RL_Model():
         # Hybrid_Actor
         # c a
         c_a_loss = -self.Critic.evaluate(b_s, c_actions_means, d_actions_q_values).mean()
+        c_a_dist = Normal(c_actions_means, self.c_action_std)
+        c_a_entropy = c_a_dist.entropy().mean()
+        d_a_dist = Categorical(d_actions_q_values)
+        d_a_entropy = d_a_dist.entropy().mean()
+        print(c_a_entropy, d_a_entropy)
         # d a
-        q_eval = d_actions_q_values.gather(1, b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
-        q_next = d_actions_q_values_
-        q_target = b_r + self.gamma * q_next.max(1)[0].view(-1, 1)  # shape (batch, 1)
-        # d_a_td_error = (q_target - q_eval).detach()
-        d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
+        # q_eval = d_actions_q_values.gather(1, b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
+        # q_next = d_actions_q_values_
+        # q_target = b_r + self.gamma * q_next.max(1)[0].view(-1, 1)  # shape (batch, 1)
+        # # d_a_td_error = (q_target - q_eval).detach()
+        # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
 
-        actor_loss = d_a_loss + c_a_loss
+        actor_loss = c_a_loss - 0.01 * c_a_entropy - 0.01 * d_a_entropy
 
         self.optimizer_a.zero_grad()
         actor_loss.backward()
