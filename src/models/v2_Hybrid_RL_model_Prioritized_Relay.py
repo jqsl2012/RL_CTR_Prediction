@@ -170,6 +170,25 @@ class hybrid_actors(nn.Module):
             nn.Softmax(dim=-1)
         )
 
+        self.c_action_std = nn.Parameter(torch.zeros(size=[1, self.c_action_dims]))
+
+    def act(self, input):
+        obs = self.bn_input(input)
+        mlp_out = self.feature_exact_layers(obs)
+
+        c_action_means = self.c_action_layer(mlp_out)
+        d_action_q_values = self.d_action_layer(mlp_out)
+
+        c_action_dist = Normal(c_action_means, self.c_action_std)
+        c_actions = torch.clamp(c_action_dist.sample(), -1, 1)  # 用于返回训练
+        ensemble_c_actions = torch.softmax(c_actions, dim=-1)
+
+        d_action_dist = Categorical(d_action_q_values)
+        d_actions = d_action_dist.sample()
+        ensemble_d_actions = d_actions + 2
+
+        return c_actions, ensemble_c_actions, d_action_q_values, ensemble_d_actions.view(-1, 1)
+
     def evaluate(self, input):
         obs = self.bn_input(input)
         mlp_out = self.feature_exact_layers(obs)
@@ -177,7 +196,13 @@ class hybrid_actors(nn.Module):
         c_actions_means = self.c_action_layer(mlp_out)
         d_actions_q_values = self.d_action_layer(mlp_out)
 
-        return c_actions_means, d_actions_q_values
+        c_action_dist = Normal(c_actions_means, self.c_action_std)
+        c_action_entropy = c_action_dist.entropy()
+
+        d_action_dist = Categorical(d_actions_q_values)
+        d_action_entropy = d_action_dist.entropy()
+
+        return c_actions_means, d_actions_q_values, c_action_entropy, d_action_entropy
 
 
 class Hybrid_RL_Model():
@@ -254,23 +279,15 @@ class Hybrid_RL_Model():
     def choose_action(self, state):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
-            c_actions_mean, d_q_values = self.Hybrid_Actor.evaluate(state)
-
-        c_action_dist = Normal(c_actions_mean, self.c_action_std)
-        c_actions = torch.clamp(c_action_dist.sample(), -1, 1)  # 用于返回训练
-        ensemble_c_actions = torch.softmax(c_actions, dim=-1)
-
-        d_action_dist = Categorical(d_q_values)
-        d_actions = d_action_dist.sample()
-        ensemble_d_actions = d_actions + 2
+            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state)
 
         self.Hybrid_Actor.train()
-        return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions.view(-1, 1)
+        return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions
 
     def choose_best_action(self, state):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
-            c_action_means, d_q_values = self.Hybrid_Actor.evaluate(state)
+            c_action_means, d_q_values, c_entropy, d_entropy = self.Hybrid_Actor.evaluate(state)
 
         ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
         ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 2
@@ -307,18 +324,14 @@ class Hybrid_RL_Model():
         critic_loss_r = critic_loss.item()
 
         # current state's action_values
-        c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
+        c_actions_means, d_actions_q_values, c_actions_entropy, d_actions_entropy = self.Hybrid_Actor.evaluate(b_s)
         # next state's action_values
-        c_actions_means_, d_actions_q_values_ = self.Hybrid_Actor.evaluate(b_s)
+        c_actions_means_, d_actions_q_values_, c_actions_entropy_, d_actions_entropy_ = self.Hybrid_Actor.evaluate(b_s)
 
         # Hybrid_Actor
         # c a
         c_a_loss = -self.Critic.evaluate(b_s, c_actions_means, d_actions_q_values).mean()
-        c_a_dist = Normal(c_actions_means, self.c_action_std)
-        c_a_entropy = c_a_dist.entropy().mean()
-        d_a_dist = Categorical(d_actions_q_values)
-        d_a_entropy = d_a_dist.entropy().mean()
-        print(c_a_entropy, d_a_entropy)
+        print(c_actions_entropy, d_actions_entropy)
         # d a
         # q_eval = d_actions_q_values.gather(1, b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
         # q_next = d_actions_q_values_
@@ -326,7 +339,7 @@ class Hybrid_RL_Model():
         # # d_a_td_error = (q_target - q_eval).detach()
         # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
 
-        actor_loss = c_a_loss - 0.01 * c_a_entropy - 0.01 * d_a_entropy
+        actor_loss = c_a_loss - 0.01 * c_actions_entropy - 0.01 * d_actions_entropy
 
         self.optimizer_a.zero_grad()
         actor_loss.backward()
