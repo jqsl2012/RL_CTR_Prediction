@@ -333,9 +333,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
 
-        rl_model.optimizer_c.param_groups[0]['lr'] = max(init_lr_c - epoch_i * (init_lr_c - end_lr_c) / (epoch - 100), end_lr_c)
-        rl_model.optimizer_c_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
-        rl_model.optimizer_d_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
+        # rl_model.optimizer_c.param_groups[0]['lr'] = max(init_lr_c - epoch_i * (init_lr_c - end_lr_c) / (epoch - 100), end_lr_c)
+        # rl_model.optimizer_c_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
+        # rl_model.optimizer_d_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
 
         exploration_rate = max(init_exploration_rate - (init_exploration_rate - end_exploration_rate) / (epoch - 100), end_exploration_rate)
 
@@ -413,9 +413,9 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=500)
-    parser.add_argument('--init_lr_a', type=float, default=1e-3)
+    parser.add_argument('--init_lr_a', type=float, default=4e-3)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=3e-3)
+    parser.add_argument('--init_lr_c', type=float, default=3e-4)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=0.9)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
