@@ -158,7 +158,8 @@ class hybrid_actors(nn.Module):
             nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
             nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2])
+            nn.BatchNorm1d(neuron_nums[2]),
+            nn.ReLU()
         )# 特征提取层
 
         self.c_action_layer = nn.Sequential(
@@ -170,7 +171,7 @@ class hybrid_actors(nn.Module):
             nn.Softmax(dim=-1)
         )
 
-        self.c_action_std = nn.Parameter(torch.zeros(size=[1]))
+        self.c_action_std = torch.ones(size=[1]).cuda()
 
     def act(self, input):
         obs = self.bn_input(input)
@@ -179,7 +180,7 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = Normal(c_action_means, F.softplus(self.c_action_std))
+        c_action_dist = Normal(c_action_means, self.c_action_std)
 
         c_actions = torch.clamp(c_action_dist.sample(), -1, 1)  # 用于返回训练
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
@@ -197,7 +198,7 @@ class hybrid_actors(nn.Module):
         c_actions_means = self.c_action_layer(mlp_out)
         d_actions_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = Normal(c_actions_means, F.softplus(self.c_action_std))
+        c_action_dist = Normal(c_actions_means, self.c_action_std)
         c_action_entropy = c_action_dist.entropy()
         # print(c_action_entropy)
         d_action_dist = Categorical(d_actions_q_values)
@@ -341,7 +342,7 @@ class Hybrid_RL_Model():
         # # d_a_td_error = (q_target - q_eval).detach()
         # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
 
-        actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
+        actor_loss = c_a_loss
 
         self.optimizer_a.zero_grad()
         actor_loss.backward()
