@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.Hybrid_RL_model_Prioritized_Relay as hybrid_rl_model
+import src.models.v4_Hybrid_RL_model_Prioritized_Relay as hybrid_rl_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -62,8 +62,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
     pretrain_model_len = len(model_dict)  # 有多少个预训练模型
 
-    return_prob_weights = torch.zeros(size=[len(features), pretrain_model_len]).to(device)
-
     pretrain_y_preds = {}
     for i in range(pretrain_model_len):
         pretrain_y_preds[i] = model_dict[i](features).detach()
@@ -87,8 +85,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
             y_preds[with_action_indexs, :] = current_y_preds
 
-            return_prob_weights[with_action_indexs] = current_prob_weights
-
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
@@ -106,9 +102,6 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_softmax_weights = torch.softmax(
                 sort_prob_weights[with_action_indexs][:, :i] * -1, dim=1
             ).to(device)  # 再进行softmax
-
-            for k in range(i):
-                return_prob_weights[with_action_indexs, current_choose_models[:, k]] = current_softmax_weights[:, k]
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
 
@@ -142,11 +135,12 @@ def generate_preds(model_dict, features, actions, prob_weights,
 
         rewards[with_action_indexs, :] = current_basic_rewards
 
-    return y_preds, return_prob_weights, rewards
+    return y_preds, rewards
 
 
 def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, device):
-    total_loss = 0
+    total_critic_loss = 0
+    total_actor_loss = 0
     log_intervals = 0
     total_rewards = 0
     targets, predicts = list(), list()
@@ -156,32 +150,31 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         embedding_vectors = embedding_layer.forward(features)
 
-        d_actions = rl_model.choose_discrete_action(embedding_vectors, exploration_rate)
+        c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors)
 
-        c_actions, prob_weights = rl_model.choose_continuous_action(embedding_vectors, d_actions.float(), exploration_rate)
-
-        y_preds, prob_weights_new, rewards = \
-            generate_preds(model_dict, features, d_actions, prob_weights, labels, device, mode='train')
+        y_preds, rewards = \
+            generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, labels, device, mode='train')
 
         targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
         predicts.extend(y_preds.tolist())
 
-        transitions = torch.cat([features.float(), c_actions, d_actions.float(), rewards], dim=1)
+        transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_d_actions.float(), rewards], dim=1)
+
         rl_model.store_transition(transitions, embedding_layer)
 
-        td_error, c_loss, d_loss = rl_model.learn(embedding_layer)
-        rl_model.soft_update(rl_model.Continuous_Actor, rl_model.Continuous_Actor_)
-        rl_model.soft_update(rl_model.Discrete_Actor, rl_model.Discrete_Actor_)
+        critic_loss, actor_loss = rl_model.learn(embedding_layer)
+        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
         rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
-        total_loss += td_error  # 取张量tensor里的标量值，如果直接返回train_loss很可能会造成GPU out of memory
+        total_critic_loss += critic_loss
+        total_actor_loss += actor_loss
         log_intervals += 1
 
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
+    return total_critic_loss / log_intervals, total_actor_loss / log_intervals, total_rewards / log_intervals, roc_auc_score(targets, predicts)
 
 
 def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
@@ -194,14 +187,9 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
 
             embedding_vectors = embedding_layer.forward(features)
 
-            actions = rl_model.choose_best_discrete_action(embedding_vectors)
-            prob_weights = rl_model.choose_best_continuous_action(embedding_vectors, actions.float())
+            actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
 
-            # x = torch.argsort(prob_weights)[:, 0]
-            # print(len((actions == 2).nonzero()), len((x == 3  ).nonzero()), len((x == 4).nonzero()), len((x == 5).nonzero()))
-            #
-            # print(len((x == 0).nonzero()), len((x == 1).nonzero()), len((x == 2).nonzero()), len((x == 3).nonzero()), len((x == 4).nonzero()))
-            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
             test_loss = loss(y, labels.float())
@@ -223,9 +211,9 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
 
             embedding_vectors = embedding_layer.forward(features)
 
-            actions = rl_model.choose_best_discrete_action(embedding_vectors)
-            prob_weights = rl_model.choose_best_continuous_action(embedding_vectors, actions.float())
-            y, prob_weights_new, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
+
+            y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
@@ -308,7 +296,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -6)
+    memory_size = 1000000
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
                                               memory_size, device, campaign_id)
 
@@ -329,7 +317,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         train_start_time = datetime.datetime.now()
 
-        train_average_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
+        train_critic_loss, train_actor_loss, train_average_rewards, train_auc = train(rl_model, model_dict,
                                                                      train_data_loader, embedding_layer,
                                                                      exploration_rate, device)
 
@@ -337,7 +325,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
         # rl_model.optimizer_c_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
         # rl_model.optimizer_d_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
 
-        exploration_rate = max(init_exploration_rate - (init_exploration_rate - end_exploration_rate) / (epoch - 100), end_exploration_rate)
+        exploration_rate = max(init_exploration_rate - (init_exploration_rate - end_exploration_rate) / epoch, end_exploration_rate)
 
         rewards_records.append(train_average_rewards)
 
@@ -347,7 +335,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
         valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        print('epoch:', epoch_i, 'training average loss:', train_average_loss, 'training average rewards',
+        print('epoch:', epoch_i, 'training critic loss:', train_critic_loss, 'training actor loss:', train_actor_loss,
+              'training average rewards',
               train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
@@ -381,10 +370,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     day_aucs_df = pd.DataFrame(data=day_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
-    torch.save(test_rl_model.Continuous_Actor.state_dict(),
-               save_param_dir + campaign_id + '/continuous_model' + 'best.pth')  # 存储最优参数
-    torch.save(test_rl_model.Discrete_Actor.state_dict(),
-               save_param_dir + campaign_id + '/discrete_model' + 'best.pth')  # 存储最优参数
+    torch.save(test_rl_model.Hybrid_Actor.state_dict(),
+               save_param_dir + campaign_id + '/actor_model' + 'best.pth')  # 存储最优参数
 
     rewards_records_df = pd.DataFrame(data=rewards_records)
     rewards_records_df.to_csv(submission_path + 'train_rewards.csv', header=None)
@@ -410,18 +397,18 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='Hybrid_RL_v4', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=500)
-    parser.add_argument('--init_lr_a', type=float, default=4e-3)
+    parser.add_argument('--epoch', type=int, default=300)
+    parser.add_argument('--init_lr_a', type=float, default=3e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=3e-4)
+    parser.add_argument('--init_lr_c', type=float, default=1e-3)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=0.9)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
