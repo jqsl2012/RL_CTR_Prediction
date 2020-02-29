@@ -167,9 +167,7 @@ class hybrid_actors(nn.Module):
 
     def act(self, input):
         obs = self.bn_input(input)
-        mlp_out = self.mlp(obs)
-
-        c_action_means = self.c_action_layer(mlp_out)
+        c_action_means = self.mlp(obs)
 
         c_action_dist = Normal(c_action_means, F.softplus(self.c_action_std))
 
@@ -179,9 +177,7 @@ class hybrid_actors(nn.Module):
 
     def evaluate(self, input):
         obs = self.bn_input(input)
-        mlp_out = self.feature_exact_layers(obs)
-
-        c_actions_means = self.c_action_layer(mlp_out)
+        c_actions_means = self.mlp(obs)
 
         c_action_dist = Normal(c_actions_means, F.softplus(self.c_action_std))
         c_action_entropy = c_action_dist.entropy()
@@ -305,7 +301,7 @@ class DDPG_AVG():
         # current state's action_values
         c_actions_means, c_actions_entropy = self.Hybrid_Actor.evaluate(b_s)
         # next state's action_values
-        c_actions_means_, d_actions_q_values_, c_actions_entropy_, d_actions_entropy_ = self.Hybrid_Actor.evaluate(b_s)
+        c_actions_means_, c_actions_entropy_ = self.Hybrid_Actor.evaluate(b_s)
 
         # Hybrid_Actor
         # c a

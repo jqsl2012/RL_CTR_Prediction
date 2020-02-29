@@ -327,7 +327,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='RL_avg', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=300)
