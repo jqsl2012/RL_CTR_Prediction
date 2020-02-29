@@ -164,14 +164,14 @@ class hybrid_actors(nn.Module):
 
         self.c_action_layer = nn.Sequential(
             nn.Linear(neuron_nums[2], self.c_action_dims),
-            nn.Tanh()
+            nn.Softmax(dim=-1)
         )
         self.d_action_layer = nn.Sequential(
             nn.Linear(neuron_nums[2], self.d_action_dims),
             nn.Softmax(dim=-1)
         )
 
-        self.c_action_std = torch.ones(size=[1]).cuda()
+        self.c_action_std = nn.Parameter(torch.ones(size=[1]))
 
     def act(self, input):
         obs = self.bn_input(input)
@@ -180,16 +180,16 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = Normal(c_action_means, self.c_action_std)
+        c_action_dist = Normal(c_action_means, F.softplus(self.c_action_std))
 
-        c_actions = torch.clamp(c_action_dist.sample(), -1, 1)  # 用于返回训练
-        ensemble_c_actions = torch.softmax(c_actions, dim=-1)
+        # c_actions = c_action_dist.sample()  # 用于返回训练
+        ensemble_c_actions = torch.softmax(c_action_dist.sample(), dim=-1)
 
         d_action_dist = Categorical(d_action_q_values)
         d_actions = d_action_dist.sample()
         ensemble_d_actions = d_actions + 2
 
-        return c_actions, ensemble_c_actions, d_action_q_values, ensemble_d_actions.view(-1, 1)
+        return ensemble_c_actions, ensemble_c_actions, d_action_q_values, ensemble_d_actions.view(-1, 1)
 
     def evaluate(self, input):
         obs = self.bn_input(input)
@@ -198,7 +198,7 @@ class hybrid_actors(nn.Module):
         c_actions_means = self.c_action_layer(mlp_out)
         d_actions_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = Normal(c_actions_means, self.c_action_std)
+        c_action_dist = Normal(c_actions_means, F.softplus(self.c_action_std))
         c_action_entropy = c_action_dist.entropy()
         # print(c_action_entropy)
         d_action_dist = Categorical(d_actions_q_values)
@@ -291,7 +291,7 @@ class Hybrid_RL_Model():
         with torch.no_grad():
             c_action_means, d_q_values, c_entropy, d_entropy = self.Hybrid_Actor.evaluate(state)
 
-        ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
+        ensemble_c_actions = c_action_means
         ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 2
 
         return ensemble_d_actions.view(-1, 1), ensemble_c_actions
@@ -342,7 +342,9 @@ class Hybrid_RL_Model():
         # # d_a_td_error = (q_target - q_eval).detach()
         # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
 
+        # actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
         actor_loss = c_a_loss
+
 
         self.optimizer_a.zero_grad()
         actor_loss.backward()

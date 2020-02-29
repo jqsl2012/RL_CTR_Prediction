@@ -296,7 +296,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -6)
+    memory_size = 1000000
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
                                               memory_size, device, campaign_id)
 
@@ -397,9 +397,9 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_RL', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='Hybrid_RL_v2', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=100)
+    parser.add_argument('--epoch', type=int, default=300)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-3)
@@ -408,7 +408,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
