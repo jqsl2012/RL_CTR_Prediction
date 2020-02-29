@@ -75,12 +75,12 @@ def train(model, model_dict, optimizer, data_loader, loss, device):
         features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
         pretrain_y_preds = torch.cat([
-            model_dict[l](features) for l in range(model_dict)
+            model_dict[l](features) for l in range(len(model_dict))
         ], dim=1)
 
-        weights = model(features)
+        weights = model(pretrain_y_preds)
 
-        y = torch.mul(pretrain_y_preds, weights)
+        y = torch.sum(torch.mul(pretrain_y_preds, weights), dim=-1).view(-1, 1)
 
         train_loss = loss(y, labels.float())
 
@@ -104,12 +104,12 @@ def test(model, model_dict, data_loader, loss, device):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
             pretrain_y_preds = torch.cat([
-                model_dict[l](features) for l in range(model_dict)
+                model_dict[l](features) for l in range(len(model_dict))
             ], dim=1)
 
-            weights = model(features)
+            weights = model(pretrain_y_preds)
 
-            y = torch.mul(pretrain_y_preds, weights)
+            y = torch.sum(torch.mul(pretrain_y_preds, weights), dim=-1).view(-1, 1)
 
             test_loss = loss(y, labels.float())
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
@@ -127,12 +127,12 @@ def submission(model, model_dict, data_loader, device):
         for features, labels in data_loader:
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
             pretrain_y_preds = torch.cat([
-                model_dict[l](features) for l in range(model_dict)
+                model_dict[l](features) for l in range(len(model_dict))
             ], dim=1)
 
-            weights = model(features)
+            weights = model(pretrain_y_preds)
 
-            y = torch.mul(pretrain_y_preds, weights)
+            y = torch.sum(torch.mul(pretrain_y_preds, weights), dim=-1).view(-1, 1)
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
@@ -191,7 +191,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
 
         train_average_loss = train(model, model_dict, optimizer, train_data_loader, loss, device)
 
-        torch.save(model.state_dict(), model_dict, save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
+        torch.save(model.state_dict(), save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
         auc, valid_loss = test(model, model_dict, test_data_loader, loss, device)
         valid_aucs.append(auc)
@@ -209,14 +209,14 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     end_time = datetime.datetime.now()
 
     if is_early_stop:
-        test_model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
+        test_model = Weight_Training(len(model_dict), len(model_dict)).to(device)
         load_path = save_param_dir + campaign_id + model_name + str(early_stop_index) + '.pth'
 
         test_model.load_state_dict(torch.load(load_path, map_location=device))  # 加载最优参数
     else:
         test_model = model
 
-    auc, test_loss = test(test_model, test_data_loader, loss, device)
+    auc, test_loss = test(test_model, model_dict, test_data_loader, loss, device)
     torch.save(test_model.state_dict(), save_param_dir + campaign_id + model_name + 'best.pth')  # 存储最优参数
 
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
@@ -259,7 +259,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, creti o, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3358, 3386, 3427, 3476')
-    parser.add_argument('--model_name', default='IPNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
+    parser.add_argument('--model_name', default='Tradition_avg', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
