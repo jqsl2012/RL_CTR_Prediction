@@ -226,7 +226,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
         os.mkdir(submission_path)
 
     # 测试集submission
-    test_predicts, test_auc = submission(test_model, test_data_loader, device)
+    test_predicts, test_auc = submission(test_model, model_dict, test_data_loader, device)
     test_pred_df = pd.DataFrame(data=test_predicts)
 
     test_pred_df.to_csv(submission_path + 'test_submission.csv', header=None)
