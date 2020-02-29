@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v4_Hybrid_RL_model_Prioritized_Relay as hybrid_rl_model
+import src.models.v4_Hybrid_RL_model_Prioritized_Replay as hybrid_rl_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -163,8 +163,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         rl_model.store_transition(transitions, embedding_layer)
 
         critic_loss, actor_loss = rl_model.learn(embedding_layer)
-        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+        rl_model.soft_update(rl_model.Hybrid_Actor_Critic, rl_model.Hybrid_Actor_Critic_)
 
         total_critic_loss += critic_loss
         total_actor_loss += actor_loss

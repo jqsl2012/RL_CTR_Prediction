@@ -291,10 +291,10 @@ class Hybrid_RL_Model():
         with torch.no_grad():
             c_actions, d_q_values = self.Hybrid_Actor.evaluate(state)
 
-        random_c_actions = torch.clamp(torch.normal(c_actions, exploration_rate), -1, 1)
+        random_c_actions = torch.clamp(c_actions + torch.normal(torch.zeros(size=[len(state), self.c_action_nums]), 1).to(self.device), -1, 1)
         ensemble_c_actions = torch.softmax(random_c_actions, dim=-1)
 
-        random_d_q_values = torch.softmax(torch.normal(d_q_values, exploration_rate), dim=-1)
+        random_d_q_values = torch.softmax(d_q_values + torch.normal(torch.zeros(size=[len(state), self.d_action_nums]), 1).to(self.device), dim=-1)
         ensemble_d_actions = torch.argsort(-random_d_q_values)[:, 0] + 2
 
         self.Hybrid_Actor.train()

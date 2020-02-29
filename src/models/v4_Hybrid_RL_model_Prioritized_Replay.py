@@ -78,6 +78,7 @@ class Memory(object):
 
         batch = self.memory[sample_indexs]
         choose_priorities = self.prioritys_[sample_indexs]
+
         ISweights = torch.pow(torch.div(choose_priorities, min_prob), -self.beta)
 
         return sample_indexs, batch, ISweights
@@ -252,7 +253,7 @@ class Hybrid_RL_Model():
         c_actions_means, d_actions_q_values, c_actions_entropy, d_actions_entropy = self.Hybrid_Actor_Critic.evaluate_a(b_s)
 
         # critic
-        q_target_critic = b_r + self.gamma * self.Hybrid_Actor_Critic_.evaluate(b_s_, c_actions_means, d_actions_q_values)
+        q_target_critic = b_r + self.gamma * self.Hybrid_Actor_Critic_.evaluate_critic(b_s_, c_actions_means, d_actions_q_values)
         q_critic = self.Hybrid_Actor_Critic.evaluate_critic(b_s, b_c_a, b_d_a)
         td_error_critic = q_target_critic - q_critic
 
@@ -271,7 +272,7 @@ class Hybrid_RL_Model():
     def choose_best_action(self, state):
         self.Hybrid_Actor_Critic.eval()
         with torch.no_grad():
-            c_action_means, d_q_values, c_entropy, d_entropy = self.Hybrid_Actor_Critic.evaluate(state)
+            c_action_means, d_q_values, c_entropy, d_entropy = self.Hybrid_Actor_Critic.evaluate_a(state)
 
         ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
         ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 2
@@ -296,8 +297,8 @@ class Hybrid_RL_Model():
         # Critic
         c_actions_means_for_critic, d_actions_q_values_for_critic, c_actions_entropy_for_critic, d_actions_entropy_for_critic\
             = self.Hybrid_Actor_Critic.evaluate_a(b_s)
-        q_target = b_r + self.gamma * self.Hybrid_Actor_Critic_.evaluate(b_s_, c_actions_means_for_critic, d_actions_q_values_for_critic)
-        q = self.Hybrid_Actor_Critic.evaluate(b_s, b_c_a, b_d_a)
+        q_target = b_r + self.gamma * self.Hybrid_Actor_Critic_.evaluate_critic(b_s_, c_actions_means_for_critic, d_actions_q_values_for_critic)
+        q = self.Hybrid_Actor_Critic.evaluate_critic(b_s, b_c_a, b_d_a)
 
         critic_td_error = (q_target - q).detach()
         critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
@@ -322,7 +323,7 @@ class Hybrid_RL_Model():
 
         # actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
         actor_loss = c_a_loss
-        loss = actor_loss + critic_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
+        loss = actor_loss + critic_loss
 
         self.optimizer.zero_grad()
         loss.backward()

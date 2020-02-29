@@ -25,7 +25,7 @@ class Memory(object):
         self.epsilon = 1e-3 # 防止出现zero priority
         self.alpha = 0.6 # 取值范围(0,1)，表示td error对priority的影响
         self.beta = 0.4 # important sample， 从初始值到1
-        self.beta_increment_per_sampling = 0.0001
+        self.beta_increment_per_sampling = 1e-5
         self.abs_err_upper = 1 # abs_err_upper和epsilon ，表明p优先级值的范围在[epsilon,abs_err_upper]之间，可以控制也可以不控制
 
         self.memory_size = memory_size
@@ -150,7 +150,7 @@ class hybrid_actors(nn.Module):
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
         neuron_nums = [300, 300, 300]
-        self.feature_exact_layers = nn.Sequential(
+        self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
             nn.ReLU(),
@@ -173,27 +173,35 @@ class hybrid_actors(nn.Module):
 
         self.c_action_std = nn.Parameter(torch.ones(size=[1]))
 
-    def act(self, input):
+        self.std = torch.ones(size=[1, self.c_action_dims]).cuda()
+        self.mean = torch.zeros(size=[1, self.c_action_dims]).cuda()
+
+        self.std_d = torch.ones(size=[1, self.d_action_dims]).cuda()
+        self.mean_d = torch.zeros(size=[1, self.d_action_dims]).cuda()
+
+    def act(self, input, exploration_rate):
         obs = self.bn_input(input)
-        mlp_out = self.feature_exact_layers(obs)
+        mlp_out = self.mlp(obs)
 
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = Normal(c_action_means, F.softplus(self.c_action_std))
-
-        c_actions = torch.clamp(c_action_dist.sample(), -1, 1)  # 用于返回训练
+        c_action_dist = c_action_means + Normal(self.mean, self.std * exploration_rate).sample()
+        # print(c_action_dist)
+        # print(Normal(c_action_means, self.std).sample())
+        # print(c_action_means + Normal(self.mean, self.std).sample())
+        c_actions = torch.clamp(c_action_dist, -1, 1)  # 用于返回训练
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action_dist = Categorical(d_action_q_values)
-        d_actions = d_action_dist.sample()
-        ensemble_d_actions = d_actions + 2
+        d_action = torch.softmax(d_action_q_values + Normal(self.mean_d, self.std_d * exploration_rate).sample(), dim=-1)
+        # d_actions = d_action_dist.sample()
+        ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 2
 
         return c_actions, ensemble_c_actions, d_action_q_values, ensemble_d_actions.view(-1, 1)
 
     def evaluate(self, input):
         obs = self.bn_input(input)
-        mlp_out = self.feature_exact_layers(obs)
+        mlp_out = self.mlp(obs)
 
         c_actions_means = self.c_action_layer(mlp_out)
         d_actions_q_values = self.d_action_layer(mlp_out)
@@ -278,10 +286,10 @@ class Hybrid_RL_Model():
 
         self.memory.add(td_errors.detach(), transitions)
 
-    def choose_action(self, state):
+    def choose_action(self, state, exploration_rate):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
-            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state)
+            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state, exploration_rate)
 
         self.Hybrid_Actor.train()
         return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions
@@ -340,10 +348,11 @@ class Hybrid_RL_Model():
         # q_next = d_actions_q_values_
         # q_target = b_r + self.gamma * q_next.max(1)[0].view(-1, 1)  # shape (batch, 1)
         # # d_a_td_error = (q_target - q_eval).detach()
-        # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
+        # # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
+        # d_a_loss = torch.pow(q_eval - q_target.detach(), 2).mean()
 
-        # actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
         actor_loss = c_a_loss
+        # actor_loss = c_a_loss
 
 
         self.optimizer_a.zero_grad()

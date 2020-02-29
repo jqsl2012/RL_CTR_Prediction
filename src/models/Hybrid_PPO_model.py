@@ -46,14 +46,14 @@ class Hybrid_Actor_Critic(nn.Module):
         # Discrete_Actor
         self.Discrete_Actor = nn.Linear(neuron_nums[2], action_nums - 1)
 
-        self.action_std = nn.Parameter(torch.zeros(1, action_nums))
+        self.action_std = torch.ones(1, action_nums).cuda()
         self.action_nums = action_nums
 
     def act(self, input):
         mlp_out = self.mlp(input)
 
         c_action_means = torch.softmax(self.Continuous_Actor(mlp_out), dim=-1)
-        c_action_dist = Normal(c_action_means, F.softplus(self.action_std))
+        c_action_dist = Normal(c_action_means, self.action_std)
         c_actions = c_action_dist.sample()
         c_action_logprobs = c_action_dist.log_prob(c_actions)
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
@@ -84,7 +84,7 @@ class Hybrid_Actor_Critic(nn.Module):
         state_value = self.Critic(mlp_out)
 
         c_action_means = torch.softmax(self.Continuous_Actor(mlp_out), dim=-1)
-        c_action_dist = Normal(c_action_means, F.softplus(self.action_std))
+        c_action_dist = Normal(c_action_means, self.action_std)
         c_action_logprobs = c_action_dist.log_prob(c_a)
         c_action_entropy = c_action_dist.entropy()
 

@@ -88,15 +88,15 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                     current_with_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 0,
-                current_basic_rewards[current_with_clk_indexs] * -1
+                current_basic_rewards[current_with_clk_indexs] * 1,
+                current_basic_rewards[current_with_clk_indexs] * 0
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                     current_without_clk_indexs].mean(dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 0,
-                current_basic_rewards[current_without_clk_indexs] * -1
+                current_basic_rewards[current_without_clk_indexs] * 1,
+                current_basic_rewards[current_without_clk_indexs] * 0
             )
         else:
             current_softmax_weights = torch.softmax(
@@ -119,15 +119,15 @@ def generate_preds(model_dict, features, actions, prob_weights, labels, device, 
             with_clk_rewards = torch.where(
                 current_y_preds[current_with_clk_indexs] >= current_row_preds[current_with_clk_indexs].mean(dim=1).view(
                     -1, 1),
-                current_basic_rewards[current_with_clk_indexs] * 0,
-                current_basic_rewards[current_with_clk_indexs] * -1
+                current_basic_rewards[current_with_clk_indexs] * 1,
+                current_basic_rewards[current_with_clk_indexs] * 0
             )
 
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(
                     dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 0,
-                current_basic_rewards[current_without_clk_indexs] * -1
+                current_basic_rewards[current_without_clk_indexs] * 1,
+                current_basic_rewards[current_without_clk_indexs] * 0
             )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -251,40 +251,40 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, init_lr,
     FM.load_state_dict(FM_pretrain_params)
     FM.eval()
 
-    AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
-    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
-    AFM.load_state_dict(AFM_pretrain_params)
-    AFM.eval()
-
-    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
-    WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
-    WandD.load_state_dict(WandD_pretrain_params)
-    WandD.eval()
-
-    DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
-    DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
-    DeepFM.load_state_dict(DeepFM_pretrain_params)
-    DeepFM.eval()
-
-    FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
-    FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
-    FNN.load_state_dict(FNN_pretrain_params)
-    FNN.eval()
-
-    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
-    IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
-    IPNN.load_state_dict(IPNN_pretrain_params)
-    IPNN.eval()
-
-    OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
-    OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
-    OPNN.load_state_dict(OPNN_pretrain_params)
-    OPNN.eval()
-
-    DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
-    DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
-    DCN.load_state_dict(DCN_pretrain_params)
-    DCN.eval()
+    # AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
+    # AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    # AFM.load_state_dict(AFM_pretrain_params)
+    # AFM.eval()
+    #
+    # WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    # WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    # WandD.load_state_dict(WandD_pretrain_params)
+    # WandD.eval()
+    #
+    # DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
+    # DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
+    # DeepFM.load_state_dict(DeepFM_pretrain_params)
+    # DeepFM.eval()
+    #
+    # FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
+    # FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
+    # FNN.load_state_dict(FNN_pretrain_params)
+    # FNN.eval()
+    #
+    # IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    # IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
+    # IPNN.load_state_dict(IPNN_pretrain_params)
+    # IPNN.eval()
+    #
+    # OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
+    # OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
+    # OPNN.load_state_dict(OPNN_pretrain_params)
+    # OPNN.eval()
+    #
+    # DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
+    # DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
+    # DCN.load_state_dict(DCN_pretrain_params)
+    # DCN.eval()
 
     model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
     # model_dict = {0: WandD.to(device), 1: DeepFM.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}

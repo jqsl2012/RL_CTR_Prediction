@@ -402,7 +402,7 @@ if __name__ == '__main__':
     parser.add_argument('--epoch', type=int, default=300)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=1e-3)
+    parser.add_argument('--init_lr_c', type=float, default=3e-3)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=0.9)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
