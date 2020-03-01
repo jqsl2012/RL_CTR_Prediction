@@ -284,7 +284,7 @@ class Hybrid_PPO_Model():
             ratios = torch.exp(c_a_logprobs - old_c_a_logprobs)
             c_a_surr1 = ratios * advantages
             c_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-            c_a_loss = -torch.min(c_a_surr1, c_a_surr2).mean() - 0.01 * c_a_entropy.mean()
+            c_a_loss = -torch.min(c_a_surr1, c_a_surr2).mean()
             # c_a_entropy_loss = 0.01 * c_a_entropy.mean()
 
             self.optimizer_c_a.zero_grad()
@@ -295,7 +295,7 @@ class Hybrid_PPO_Model():
             ratios = torch.exp(d_a_logprobs - old_d_a_logprobs)
             d_a_surr1 = ratios * advantages
             d_a_surr2 = torch.clamp(ratios, 1 - self.eps_clip, 1 + self.eps_clip) * advantages
-            d_a_loss = -torch.min(d_a_surr1, d_a_surr2).mean() - 0.01 * d_a_entropy.mean()
+            d_a_loss = -torch.min(d_a_surr1, d_a_surr2).mean()
             # d_a_entropy_loss = 0.01 * d_a_entropy.mean()
 
             self.optimizer_d_a.zero_grad()
