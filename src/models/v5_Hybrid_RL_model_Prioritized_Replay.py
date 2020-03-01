@@ -50,6 +50,15 @@ class SumTree(object):
                 tree_idx = (tree_idx - 1) // 2
                 self.sum_tree[tree_idx] += changes[i] # 这里要改，因为parents_tree_idx会有相同的部分
 
+    def batch_update(self, tree_idx, p):
+        changes = p - self.sum_tree[tree_idx]
+        self.sum_tree[tree_idx] = p
+
+        for i, tree_idx in enumerate(tree_idx):
+            while tree_idx != 0:
+                tree_idx = (tree_idx - 1) // 2
+                self.sum_tree[tree_idx] += changes[i]  # 这里要改，因为parents_tree_idx会有相同的部分
+
     def get_leaf(self, v): # v-随机选择的p值，用于抽取data， 只有一条
         parent_idx = 0
 
@@ -119,9 +128,9 @@ class Memory(object):
 
         return tree_idx, batch, ISweights
 
-    def batch_update(self, tree_idx_start, tree_idx_end, td_errors):
+    def batch_update(self, tree_idx, td_errors):
         p = self.get_priority(td_errors)
-        self.sum_tree.update(tree_idx_start, tree_idx_end, p)
+        self.sum_tree.batch_update(tree_idx, p)
 
 class Critic(nn.Module):
     def __init__(self, input_dims, c_action_nums, d_action_nums):
@@ -326,7 +335,7 @@ class Hybrid_RL_Model():
 
     def learn(self, embedding_layer):
         # sample
-        choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
+        choose_idx, batch_memory, ISweights = self.memory.sample(self.batch_size)
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
         b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.c_action_nums]
