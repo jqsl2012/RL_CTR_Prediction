@@ -39,11 +39,10 @@ class Critic(nn.Module):
         )
 
     def evaluate(self, input):
-        mlp_out = self.mlp(input)
-
-        state_value = self.Critic(mlp_out)
+        state_value = self.mlp(input)
 
         return state_value
+
 
 class Discrete_Actor(nn.Module):
     def __init__(self, input_dims, action_dims):
@@ -89,6 +88,7 @@ class Discrete_Actor(nn.Module):
 
         return d_action_values
 
+
 class Continuous_Actor(nn.Module):
     def __init__(self, input_dims, action_dims):
         super(Continuous_Actor, self).__init__()
@@ -110,10 +110,10 @@ class Continuous_Actor(nn.Module):
             nn.Tanh()
         )
 
-    def forward(self, input):
-        mlp_out = self.mlp(input)
+        self.action_std = torch.ones(1, action_dims).cuda()
 
-        c_action_means = self.mlp(mlp_out)
+    def forward(self, input):
+        c_action_means = self.mlp(input)
         c_action_dist = Normal(c_action_means, self.action_std)
         c_actions = torch.clamp(c_action_dist.sample(), -1, 1)
         c_action_logprobs = c_action_dist.log_prob(c_actions)
