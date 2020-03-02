@@ -99,6 +99,10 @@ def generate_preds(model_dict, features, actions, prob_weights,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
         else:
+            current_pretrain_y_preds = torch.cat([
+                pretrain_y_preds[l][with_action_indexs] for l in range(pretrain_model_len)
+            ], dim=1)
+
             current_softmax_weights = torch.softmax(
                 sort_prob_weights[with_action_indexs][:, :i] * -1, dim=1
             ).to(device)  # 再进行softmax
@@ -117,14 +121,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
             y_preds[with_action_indexs, :] = current_y_preds
 
             with_clk_rewards = torch.where(
-                current_y_preds[current_with_clk_indexs] >= current_row_preds[current_with_clk_indexs].mean(dim=1).view(
+                current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[current_with_clk_indexs].mean(dim=1).view(
                     -1, 1),
                 current_basic_rewards[current_with_clk_indexs] * 1,
                 current_basic_rewards[current_with_clk_indexs] * -1
             )
 
             without_clk_rewards = torch.where(
-                current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(
+                current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[current_without_clk_indexs].mean(
                     dim=1).view(-1, 1),
                 current_basic_rewards[current_without_clk_indexs] * 1,
                 current_basic_rewards[current_without_clk_indexs] * -1
