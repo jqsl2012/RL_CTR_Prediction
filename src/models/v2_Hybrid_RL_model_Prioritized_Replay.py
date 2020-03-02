@@ -308,17 +308,21 @@ class Hybrid_RL_Model():
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def learn_c(self, embedding_layer):
+    def sample_batch(self, embedding_layer):
         # sample
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
         b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.c_action_nums]
-        b_d_a = batch_memory[:, self.field_nums + self.c_action_nums: self.field_nums + self.c_action_nums + self.d_action_nums]
+        b_d_a = batch_memory[:,
+                self.field_nums + self.c_action_nums: self.field_nums + self.c_action_nums + self.d_action_nums]
         b_discrete_a = torch.unsqueeze(batch_memory[:, self.field_nums + self.c_action_nums] + self.d_action_nums, 1)
         b_r = torch.unsqueeze(batch_memory[:, -1], 1)
         b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
 
+        return choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights
+
+    def learn_c(self, choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights):
         # Critic
         c_actions_means_for_critic, d_actions_q_values_for_critic, c_actions_entropy_for_critic, d_actions_entropy_for_critic\
             = self.Hybrid_Actor.evaluate(b_s)
@@ -334,39 +338,29 @@ class Hybrid_RL_Model():
 
         critic_loss_r = critic_loss.item()
 
-        # current state's action_values
-        c_actions_means, d_actions_q_values, c_actions_entropy, d_actions_entropy = self.Hybrid_Actor.evaluate(b_s)
-        # next state's action_values
-        c_actions_means_, d_actions_q_values_, c_actions_entropy_, d_actions_entropy_ = self.Hybrid_Actor.evaluate(b_s)
-
-        # Hybrid_Actor
-        # c a
-        c_a_loss = -self.Critic.evaluate(b_s, c_actions_means, d_actions_q_values).mean()
-        # print(c_actions_entropy.mean(), d_actions_entropy.mean())
-        # d a
-        # q_eval = d_actions_q_values.gather(1, b_discrete_a.long() - 2)  # shape (batch,1), gather函数将对应action的Q值提取出来做Bellman公式迭代
-        # q_next = d_actions_q_values_
-        # q_target = b_r + self.gamma * q_next.max(1)[0].view(-1, 1)  # shape (batch, 1)
-        # # d_a_td_error = (q_target - q_eval).detach()
-        # # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
-        # d_a_loss = torch.pow(q_eval - q_target.detach(), 2).mean()
-
-        actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
-        # actor_loss = c_a_loss
-
-
-        self.optimizer_a.zero_grad()
-        actor_loss.backward()
-        self.optimizer_a.step()
-
-        actor_loss_r = actor_loss.item()
-
         new_p = critic_td_error
 
         self.memory.batch_update(choose_idx, new_p)
 
-        return critic_loss_r, actor_loss_r
+        return critic_loss_r
 
+    def learn_a(self, b_s):
+        # current state's action_values
+        c_actions_means, d_actions_q_values, c_actions_entropy, d_actions_entropy = self.Hybrid_Actor.evaluate(b_s)
+
+        # Hybrid_Actor
+        # c a
+        c_a_loss = -self.Critic.evaluate(b_s, c_actions_means, d_actions_q_values).mean()
+
+        # actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
+        actor_loss = c_a_loss
+
+        self.optimizer_a.zero_grad()
+        actor_loss.backward()
+        self.optimizer_a.step()
+        actor_loss_r = actor_loss.item()
+
+        return actor_loss_r
 
 class OrnsteinUhlenbeckNoise:
     def __init__(self, mu):

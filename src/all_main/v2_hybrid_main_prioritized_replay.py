@@ -163,12 +163,16 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         rl_model.store_transition(transitions, embedding_layer)
 
-        for i in range(3):
-            critic_loss, actor_loss = rl_model.learn(embedding_layer)
-            learn_steps += 1
-        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+        choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights = rl_model.sample_batch(embedding_layer)
 
+        critic_loss = rl_model.learn_c(choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights)
+
+        if i % 3 == 0:
+            actor_loss = rl_model.learn_a(b_s)
+            rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
+            rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+
+        learn_steps += 1
         total_critic_loss = critic_loss
         total_actor_loss = actor_loss
         log_intervals += 1
