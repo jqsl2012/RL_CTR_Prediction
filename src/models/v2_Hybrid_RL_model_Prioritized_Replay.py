@@ -145,7 +145,7 @@ class hybrid_actors(nn.Module):
         super(hybrid_actors, self).__init__()
         self.input_dims = input_dims
         self.c_action_dims = action_nums
-        self.d_action_dims = action_nums - 1
+        self.d_action_dims = action_nums
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
@@ -276,7 +276,6 @@ class Hybrid_RL_Model():
 
         # current state's action_values
         c_actions_means, d_actions_q_values, c_actions_entropy, d_actions_entropy = self.Hybrid_Actor.evaluate(b_s)
-
         # critic
         q_target_critic = b_r + self.gamma * self.Critic_.evaluate(b_s_, c_actions_means, d_actions_q_values)
         q_critic = self.Critic.evaluate(b_s, b_c_a, b_d_a)

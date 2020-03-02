@@ -66,7 +66,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
     for i in range(pretrain_model_len):
         pretrain_y_preds[i] = model_dict[i](features).detach()
 
-    choose_model_lens = range(2, pretrain_model_len + 1)
+    choose_model_lens = range(1, pretrain_model_len + 1)
     for i in choose_model_lens:  # 根据ddqn_model的action,判断要选择ensemble的数量
         with_action_indexs = (actions == i).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i]
@@ -84,8 +84,11 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_y_preds = torch.sum(torch.mul(current_prob_weights, current_pretrain_y_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
         elif i == 1:
-            current_y_preds = current_pretrain_y_preds[current_choose_models]
-            y_preds = current_y_preds
+            current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+            for k in range(pretrain_model_len):
+                choose_model_indexs = (current_choose_models == k).nonzero()[:, 0]
+                current_y_preds[choose_model_indexs, 0] = current_pretrain_y_preds[choose_model_indexs, k]
+            y_preds[with_action_indexs, :] = current_y_preds
         else:
             current_pretrain_y_preds = torch.cat([
                 pretrain_y_preds[l][with_action_indexs] for l in range(pretrain_model_len)
