@@ -145,7 +145,7 @@ class hybrid_actors(nn.Module):
         super(hybrid_actors, self).__init__()
         self.input_dims = input_dims
         self.c_action_dims = action_nums
-        self.d_action_dims = action_nums
+        self.d_action_dims = action_nums - 1
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
@@ -195,7 +195,7 @@ class hybrid_actors(nn.Module):
 
         d_action = torch.clamp(d_action_q_values + exploration_rate * Normal(self.mean_d, self.std_d * 1).sample(), -1, 1)
         # d_actions = d_action_dist.sample()
-        ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
+        ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 2
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
 
@@ -235,7 +235,7 @@ class Hybrid_RL_Model():
         self.feature_nums = feature_nums
         self.field_nums = field_nums
         self.c_action_nums = action_nums
-        self.d_action_nums = action_nums
+        self.d_action_nums = action_nums - 1
         self.campaign_id = campaign_id
         self.lr_C_A = lr_C_A
         self.lr_D_A = lr_D_A
@@ -299,7 +299,7 @@ class Hybrid_RL_Model():
             c_action_means, d_q_values, c_entropy, d_entropy = self.Hybrid_Actor.evaluate(state)
 
         ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
-        ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 1
+        ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 2
 
         return ensemble_d_actions.view(-1, 1), ensemble_c_actions
 
@@ -329,8 +329,8 @@ class Hybrid_RL_Model():
         q = self.Critic.evaluate(b_s, b_c_a, b_d_a)
 
         critic_td_error = (q_target - q).detach()
-        # critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
-        critic_loss = self.loss_func(q, q_target)
+        critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
+        # critic_loss = self.loss_func(q, q_target)
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()
