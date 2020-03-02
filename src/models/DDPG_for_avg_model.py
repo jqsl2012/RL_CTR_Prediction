@@ -163,7 +163,7 @@ class hybrid_actors(nn.Module):
             nn.Softmax(dim=-1)
         )
 
-        self.c_action_std = nn.Parameter(torch.ones(size=[1]))
+        self.c_action_std = nn.Parameter(torch.zeros(size=[1]))
 
     def act(self, input):
         obs = self.bn_input(input)

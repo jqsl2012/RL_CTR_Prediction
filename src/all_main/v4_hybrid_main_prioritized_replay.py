@@ -164,6 +164,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         critic_loss, actor_loss = rl_model.learn(embedding_layer)
         rl_model.soft_update(rl_model.Hybrid_Actor_Critic, rl_model.Hybrid_Actor_Critic_)
+        # rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
         total_critic_loss += critic_loss
         total_actor_loss += actor_loss
@@ -399,7 +400,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='Hybrid_RL_v4', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=300)
-    parser.add_argument('--init_lr_a', type=float, default=3e-4)
+    parser.add_argument('--init_lr_a', type=float, default=3e-3)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-3)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)

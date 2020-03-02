@@ -379,7 +379,6 @@ class Hybrid_RL_Model():
         actor_loss = c_a_loss
         # actor_loss = c_a_loss
 
-
         self.optimizer_a.zero_grad()
         actor_loss.backward()
         self.optimizer_a.step()
@@ -388,7 +387,7 @@ class Hybrid_RL_Model():
 
         new_p = critic_td_error
 
-        self.memory.batch_update(choose_idx, new_p)
+        self.memory.batch_update(choose_idx.long().squeeze(1), new_p)
 
         return critic_loss_r, actor_loss_r
 

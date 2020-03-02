@@ -168,7 +168,7 @@ class hybrid_actors(nn.Module):
         )
         self.d_action_layer = nn.Sequential(
             nn.Linear(neuron_nums[2], self.d_action_dims),
-            nn.Softmax(dim=-1)
+            nn.Tanh()
         )
 
         self.c_action_std = nn.Parameter(torch.ones(size=[1]))
@@ -186,18 +186,18 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = c_action_means + Normal(self.mean, self.std * exploration_rate).sample()
+        c_action_dist = c_action_means + exploration_rate * Normal(self.mean, self.std * 1).sample()
         # print(c_action_dist)
         # print(Normal(c_action_means, self.std).sample())
         # print(c_action_means + Normal(self.mean, self.std).sample())
         c_actions = torch.clamp(c_action_dist, -1, 1)  # 用于返回训练
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = torch.softmax(d_action_q_values + Normal(self.mean_d, self.std_d * exploration_rate).sample(), dim=-1)
+        d_action = torch.clamp(d_action_q_values + exploration_rate * Normal(self.mean_d, self.std_d * 1).sample(), -1, 1)
         # d_actions = d_action_dist.sample()
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 2
 
-        return c_actions, ensemble_c_actions, d_action_q_values, ensemble_d_actions.view(-1, 1)
+        return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
 
     def evaluate(self, input):
         obs = self.bn_input(input)
@@ -206,10 +206,10 @@ class hybrid_actors(nn.Module):
         c_actions_means = self.c_action_layer(mlp_out)
         d_actions_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = Normal(c_actions_means, F.softplus(self.c_action_std))
+        c_action_dist = Normal(c_actions_means, self.std * 1)
         c_action_entropy = c_action_dist.entropy()
         # print(c_action_entropy)
-        d_action_dist = Categorical(d_actions_q_values)
+        d_action_dist = Normal(d_actions_q_values, self.std_d * 1)
         d_action_entropy = d_action_dist.entropy()
 
         return c_actions_means, d_actions_q_values, c_action_entropy, d_action_entropy
@@ -308,7 +308,7 @@ class Hybrid_RL_Model():
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def learn(self, embedding_layer):
+    def learn_c(self, embedding_layer):
         # sample
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
 
@@ -351,7 +351,7 @@ class Hybrid_RL_Model():
         # # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
         # d_a_loss = torch.pow(q_eval - q_target.detach(), 2).mean()
 
-        actor_loss = c_a_loss
+        actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
         # actor_loss = c_a_loss
 
 

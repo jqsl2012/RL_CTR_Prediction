@@ -126,7 +126,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
             without_clk_rewards = torch.where(
                 current_y_preds[current_without_clk_indexs] <= current_row_preds[current_without_clk_indexs].mean(
                     dim=1).view(-1, 1),
-                current_basic_rewards[current_without_clk_indexs] * 10,
+                current_basic_rewards[current_without_clk_indexs] * 1,
                 current_basic_rewards[current_without_clk_indexs] * -1
             )
 
@@ -165,18 +165,18 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         for i in range(3):
             critic_loss, actor_loss = rl_model.learn(embedding_layer)
-            rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-            rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
             learn_steps += 1
+        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
+        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
-        total_critic_loss += critic_loss
-        total_actor_loss += actor_loss
+        total_critic_loss = critic_loss
+        total_actor_loss = actor_loss
         log_intervals += 1
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_critic_loss / log_intervals, total_actor_loss / log_intervals, total_rewards / log_intervals, \
+    return total_critic_loss, total_actor_loss, total_rewards / log_intervals, \
            roc_auc_score(targets, predicts), learn_steps
 
 
@@ -299,7 +299,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -1)
+    memory_size = 1000000
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
                                               memory_size, device, campaign_id)
 
@@ -402,15 +402,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL_v2', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=100)
-    parser.add_argument('--init_lr_a', type=float, default=1e-3)
+    parser.add_argument('--epoch', type=int, default=300)
+    parser.add_argument('--init_lr_a', type=float, default=1e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=3e-3)
+    parser.add_argument('--init_lr_c', type=float, default=1e-3)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
-    parser.add_argument('--init_exploration_rate', type=float, default=0.9)
+    parser.add_argument('--init_exploration_rate', type=float, default=1)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')

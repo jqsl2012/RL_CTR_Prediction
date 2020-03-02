@@ -147,7 +147,7 @@ class hybrid_actor_critic(nn.Module):
             nn.Softmax(dim=-1)
         )
 
-        self.c_action_std = nn.Parameter(torch.ones(size=[1]))
+        self.c_action_std = nn.Parameter(torch.zeros(size=[1]))
 
     def evaluate_critic(self, input, c_actions, d_actions):
         obs = self.bn_input(input)
@@ -321,8 +321,8 @@ class Hybrid_RL_Model():
         # # d_a_td_error = (q_target - q_eval).detach()
         # d_a_loss = (ISweights * torch.pow(q_eval - q_target.detach(), 2)).mean()
 
-        # actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
-        actor_loss = c_a_loss
+        actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
+        # actor_loss = c_a_loss
         loss = actor_loss + critic_loss
 
         self.optimizer.zero_grad()

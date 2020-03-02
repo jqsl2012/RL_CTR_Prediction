@@ -163,11 +163,10 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         rl_model.store_transition(transitions, embedding_layer)
 
-        for i in range(3):
-            critic_loss, actor_loss = rl_model.learn(embedding_layer)
-            rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-            rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
-            learn_steps += 1
+        critic_loss, actor_loss = rl_model.learn(embedding_layer)
+        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
+        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+        learn_steps += 1
 
         total_critic_loss += critic_loss
         total_actor_loss += actor_loss
@@ -299,7 +298,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     model_dict_len = len(model_dict)
 
-    memory_size = round(len(train_data), -1)
+    memory_size = 1000000
     rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
                                               memory_size, device, campaign_id)
 
@@ -414,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
