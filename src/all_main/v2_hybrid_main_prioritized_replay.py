@@ -83,9 +83,12 @@ def generate_preds(model_dict, features, actions, prob_weights,
         if i == pretrain_model_len:
             current_y_preds = torch.sum(torch.mul(current_prob_weights, current_pretrain_y_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
-        elif i == 1:
-            current_y_preds = current_pretrain_y_preds[current_choose_models]
-            y_preds = current_y_preds
+        # elif i == 1:
+        #     current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+        #     for k in range(pretrain_model_len):
+        #         choose_model_indexs = (current_choose_models == k).nonzero()[:, 0]
+        #         current_y_preds[choose_model_indexs, 0] = current_pretrain_y_preds[choose_model_indexs, k]
+        #     y_preds[with_action_indexs, :] = current_y_preds
         else:
             current_pretrain_y_preds = torch.cat([
                 pretrain_y_preds[l][with_action_indexs] for l in range(pretrain_model_len)
@@ -410,7 +413,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
