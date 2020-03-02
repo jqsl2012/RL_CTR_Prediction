@@ -68,11 +68,11 @@ class Memory(object):
             min_prob = torch.min(self.prioritys_)
             # 采样概率分布
             P = torch.div(self.prioritys_, total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size)).long().to(self.device)
         else:
             min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
             P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
@@ -330,7 +330,8 @@ class Hybrid_RL_Model():
         q = self.Critic.evaluate(b_s, b_c_a, b_d_a)
 
         critic_td_error = (q_target - q).detach()
-        critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
+        # critic_loss = (ISweights * torch.pow(q - q_target.detach(), 2)).mean()
+        critic_loss = self.loss_func(q, q_target)
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()
