@@ -122,11 +122,12 @@ lr_preds_clk = lr_preds[with_clk_indexs][:, 1]
 print(len(ffm_preds_clk), len(np.where(ffm_preds_clk >= fm_preds_clk)[0]), len(np.where(ffm_preds_clk >= lr_preds_clk)[0]), len(np.where(fm_preds_clk >= lr_preds_clk)[0]))
 print(len(np.where(ffm_preds_clk >= (ffm_preds_clk + fm_preds_clk + lr_preds_clk) / 3)[0]))
 
-plt.plot(with_clk_indexs[0], ffm_preds_clk, 'r')
-# plt.plot(with_clk_indexs[0], fm_preds_clk, 'b')
-plt.plot(with_clk_indexs[0], lr_preds_clk, 'g')
+plt.plot(with_clk_indexs[0], ffm_preds_clk, 'r', label='ffm')
+# plt.plot(with_clk_indexs[0], fm_preds_clk, 'b', label='fm')
+# plt.plot(with_clk_indexs[0], lr_preds_clk, 'g', label='lr')
+plt.plot(with_clk_indexs[0], (ffm_preds_clk + fm_preds_clk + lr_preds_clk) / 3, 'y', label='avg')
 
-# plt.plot(with_clk_indexs[0], (ffm_preds_clk + fm_preds_clk + lr_preds_clk) / 3, 'y')
+plt.legend()
 plt.show()
 
 without_clk_indexs = np.where(test_data[:, 0] == 0)
@@ -136,9 +137,10 @@ lr_preds_withoutclk = lr_preds[without_clk_indexs][:, 1]
 print(len(ffm_preds_withoutclk), len(np.where(ffm_preds_withoutclk <= fm_preds_withoutclk)[0]), len(np.where(ffm_preds_withoutclk <= lr_preds_withoutclk)[0]), len(np.where(fm_preds_withoutclk <= lr_preds_withoutclk)[0]))
 print(len(np.where(ffm_preds_withoutclk <= (ffm_preds_withoutclk + fm_preds_withoutclk + lr_preds_withoutclk) / 3)[0]))
 
-plt.plot(without_clk_indexs[0], ffm_preds_withoutclk, 'r')
-plt.plot(without_clk_indexs[0], fm_preds_withoutclk, 'b')
-# plt.plot(without_clk_indexs[0], lr_preds_withoutclk, 'g')
+plt.plot(without_clk_indexs[0], ffm_preds_withoutclk, 'r', label='ffm')
+# plt.plot(without_clk_indexs[0], fm_preds_withoutclk, 'b', label='fm')
+# plt.plot(without_clk_indexs[0], lr_preds_withoutclk, 'g', label='lr')
+plt.plot(without_clk_indexs[0], (ffm_preds_withoutclk + fm_preds_withoutclk + lr_preds_withoutclk) / 3, 'y', label='avg')
 
-# plt.plot(without_clk_indexs[0], (ffm_preds_withoutclk + fm_preds_withoutclk + lr_preds_withoutclk) / 3, 'y')
+plt.legend()
 plt.show()
