@@ -106,3 +106,39 @@ print(beta)
 
 print(torch.min)
 
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+ffm_preds = pd.read_csv('../../data/ipinyou/1458/FFM/test_submission.csv', header=None).values
+fm_preds = pd.read_csv('../../data/ipinyou/1458/FM/test_submission.csv', header=None).values
+lr_preds = pd.read_csv('../../data/ipinyou/1458/LR/test_submission.csv', header=None).values
+test_data = pd.read_csv('../../data/ipinyou/1458/test_.txt', header=None).values
+
+with_clk_indexs = np.where(test_data[:, 0] == 1)
+ffm_preds_clk = ffm_preds[with_clk_indexs][:, 1]
+fm_preds_clk = fm_preds[with_clk_indexs][:, 1]
+lr_preds_clk = lr_preds[with_clk_indexs][:, 1]
+print(len(ffm_preds_clk), len(np.where(ffm_preds_clk >= fm_preds_clk)[0]), len(np.where(ffm_preds_clk >= lr_preds_clk)[0]), len(np.where(fm_preds_clk >= lr_preds_clk)[0]))
+print(len(np.where(ffm_preds_clk >= (ffm_preds_clk + fm_preds_clk + lr_preds_clk) / 3)[0]))
+
+plt.plot(with_clk_indexs[0], ffm_preds_clk, 'r')
+# plt.plot(with_clk_indexs[0], fm_preds_clk, 'b')
+plt.plot(with_clk_indexs[0], lr_preds_clk, 'g')
+
+# plt.plot(with_clk_indexs[0], (ffm_preds_clk + fm_preds_clk + lr_preds_clk) / 3, 'y')
+plt.show()
+
+without_clk_indexs = np.where(test_data[:, 0] == 0)
+ffm_preds_withoutclk = ffm_preds[without_clk_indexs][:, 1]
+fm_preds_withoutclk = fm_preds[without_clk_indexs][:, 1]
+lr_preds_withoutclk = lr_preds[without_clk_indexs][:, 1]
+print(len(ffm_preds_withoutclk), len(np.where(ffm_preds_withoutclk <= fm_preds_withoutclk)[0]), len(np.where(ffm_preds_withoutclk <= lr_preds_withoutclk)[0]), len(np.where(fm_preds_withoutclk <= lr_preds_withoutclk)[0]))
+print(len(np.where(ffm_preds_withoutclk <= (ffm_preds_withoutclk + fm_preds_withoutclk + lr_preds_withoutclk) / 3)[0]))
+
+plt.plot(without_clk_indexs[0], ffm_preds_withoutclk, 'r')
+plt.plot(without_clk_indexs[0], fm_preds_withoutclk, 'b')
+# plt.plot(without_clk_indexs[0], lr_preds_withoutclk, 'g')
+
+# plt.plot(without_clk_indexs[0], (ffm_preds_withoutclk + fm_preds_withoutclk + lr_preds_withoutclk) / 3, 'y')
+plt.show()
