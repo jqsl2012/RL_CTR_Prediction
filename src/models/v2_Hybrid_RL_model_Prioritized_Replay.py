@@ -68,11 +68,11 @@ class Memory(object):
             min_prob = torch.min(self.prioritys_)
             # 采样概率分布
             P = torch.div(self.prioritys_, total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P)).long().to(self.device)
         else:
             min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
             P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
@@ -195,7 +195,7 @@ class hybrid_actors(nn.Module):
 
         d_action = torch.clamp(d_action_q_values + exploration_rate * Normal(self.mean_d, self.std_d * 1).sample(), -1, 1)
         # d_actions = d_action_dist.sample()
-        ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 2
+        ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
 
@@ -235,7 +235,7 @@ class Hybrid_RL_Model():
         self.feature_nums = feature_nums
         self.field_nums = field_nums
         self.c_action_nums = action_nums
-        self.d_action_nums = action_nums - 1
+        self.d_action_nums = action_nums
         self.campaign_id = campaign_id
         self.lr_C_A = lr_C_A
         self.lr_D_A = lr_D_A
@@ -300,7 +300,7 @@ class Hybrid_RL_Model():
             c_action_means, d_q_values, c_entropy, d_entropy = self.Hybrid_Actor.evaluate(state)
 
         ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
-        ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 2
+        ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 1
 
         return ensemble_d_actions.view(-1, 1), ensemble_c_actions
 
