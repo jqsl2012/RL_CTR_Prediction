@@ -268,8 +268,8 @@ class Hybrid_TD3_Model():
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-        self.action_mean = torch.zeros(size=[self.batch_size, self.c_action_nums]).to(self.device)
-        self.action_std = torch.ones(size=[self.batch_size, self.c_action_nums]).to(self.device)
+        self.action_mean = torch.zeros(size=[1, self.c_action_nums]).to(self.device)
+        self.action_std = torch.ones(size=[1, self.c_action_nums]).to(self.device)
 
         self.learn_iter = 0
         self.policy_freq = 2
@@ -339,9 +339,9 @@ class Hybrid_TD3_Model():
         b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
 
         c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
-        print(torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5))
-        next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5, 0.5), -1, 1)
-        next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5, 0.5), -1, 1)
+
+        next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.action_mean.expand_as(c_actions_means_next), self.action_std.expand_as(c_actions_means_next) * 0.4).sample(), -0.5, 0.5), -1, 1)
+        next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.action_mean.expand_as(c_actions_means_next), self.action_std.expand_as(c_actions_means_next) * 0.4).sample(), -0.5, 0.5), -1, 1)
 
         q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
         q_target = torch.min(q1_target, q2_target)

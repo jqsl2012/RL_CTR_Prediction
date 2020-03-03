@@ -115,14 +115,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_with_clk_indexs] * 1,
-            current_basic_rewards[current_with_clk_indexs] * 0
+            current_basic_rewards[current_with_clk_indexs] * -1
         )
 
         without_clk_rewards = torch.where(
             current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_without_clk_indexs] * 1,
-            current_basic_rewards[current_without_clk_indexs] * 0
+            current_basic_rewards[current_without_clk_indexs] * -1
         )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -182,7 +182,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-            print(actions, prob_weights)
+            # print(actions, prob_weights)
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
