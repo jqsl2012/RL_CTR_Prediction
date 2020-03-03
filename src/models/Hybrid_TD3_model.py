@@ -68,11 +68,11 @@ class Memory(object):
             min_prob = torch.min(self.prioritys_)
             # 采样概率分布
             P = torch.div(self.prioritys_, total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size)).long().to(self.device)
         else:
             min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
             P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
@@ -118,7 +118,7 @@ class Critic(nn.Module):
 
         deep_input_dims = self.input_dims + self.c_action_nums + self.d_action_nums
 
-        neuron_nums = [400, 300]
+        neuron_nums = [300, 300]
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -141,6 +141,7 @@ class Critic(nn.Module):
 
     def evaluate(self, input, c_actions, d_actions):
         obs = self.bn_input(input)
+        # obs = input
         cat = torch.cat([obs, c_actions, d_actions], dim=1)
 
         q_out_1 = self.mlp_1(cat)
@@ -151,6 +152,7 @@ class Critic(nn.Module):
 
     def evaluate_q_1(self, input, c_actions, d_actions):
         obs = self.bn_input(input)
+        # obs = input
         cat = torch.cat([obs, c_actions, d_actions], dim=1)
 
         q_out_1 = self.mlp_1(cat)
@@ -166,7 +168,7 @@ class hybrid_actors(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        neuron_nums = [400, 300]
+        neuron_nums = [300, 300]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -193,23 +195,24 @@ class hybrid_actors(nn.Module):
 
     def act(self, input):
         obs = self.bn_input(input)
+        # obs = input
         mlp_out = self.mlp(obs)
 
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = c_action_means + Normal(self.mean, self.std * 0.1).sample()
+        c_actions = torch.clamp(c_action_means + Normal(self.mean, self.std * 0.2).sample(), -1, 1)  # 用于返回训练
 
-        c_actions = torch.clamp(c_action_dist, -1, 1)  # 用于返回训练
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = torch.clamp(d_action_q_values + Normal(self.mean_d, self.std_d * 0.1).sample(), -1, 1)
+        d_action = torch.clamp(d_action_q_values + Normal(self.mean_d, self.std_d * 0.2).sample(), -1, 1)
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
 
     def evaluate(self, input):
         obs = self.bn_input(input)
+        # obs = input
         mlp_out = self.mlp(obs)
 
         c_actions_means = self.c_action_layer(mlp_out)
@@ -268,10 +271,13 @@ class Hybrid_TD3_Model():
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
-        self.c_action_std = torch.ones(size=[1, self.c_action_nums]).to(self.device)
+        self.action_mean = torch.zeros(size=[self.batch_size, self.c_action_nums]).to(self.device)
+        self.action_std = torch.ones(size=[self.batch_size, self.c_action_nums]).to(self.device)
 
         self.learn_iter = 0
         self.policy_freq = 2
+
+
 
     def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
         b_s = embedding_layer.forward(transitions[:, :self.field_nums].long())
@@ -281,18 +287,19 @@ class Hybrid_TD3_Model():
         b_r = torch.unsqueeze(transitions[:, -1], dim=1)
 
         c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
+
         next_c_actions = torch.clamp(
-            c_actions_means_next + torch.clamp(Normal(self.Hybrid_Actor_.mean, self.Hybrid_Actor_.std * 0.2), -0.5,
+            c_actions_means_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5,
                                                0.5), -1, 1)
         next_d_actions = torch.clamp(
-            d_actions_q_values_next + torch.clamp(Normal(self.Hybrid_Actor_.mean, self.Hybrid_Actor_.std * 0.2), -0.5,
+            d_actions_q_values_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5,
                                                   0.5), -1, 1)
 
         q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
         q_target = torch.min(q1_target, q2_target)
         q_target = b_r + self.gamma * q_target
 
-        q1, q2 = self.Critic(b_s, b_c_a, b_d_a)
+        q1, q2 = self.Critic.evaluate(b_s, b_c_a, b_d_a)
 
         critic_td_error = (2 * q_target - q1 - q2).detach()
 
@@ -337,17 +344,18 @@ class Hybrid_TD3_Model():
         b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
 
         c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
-        next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.Hybrid_Actor_.mean, self.Hybrid_Actor_.std * 0.2), -0.5, 0.5), -1, 1)
-        next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.Hybrid_Actor_.mean, self.Hybrid_Actor_.std * 0.2), -0.5, 0.5), -1, 1)
+        print(torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5))
+        next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5), -1, 1)
+        next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5), -1, 1)
 
         q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
         q_target = torch.min(q1_target, q2_target)
         q_target = b_r + self.gamma * q_target
 
-        q1, q2 = self.Critic(b_s, b_c_a, b_d_a)
+        q1, q2 = self.Critic.evaluate(b_s, b_c_a, b_d_a)
 
         critic_td_error = (2 * q_target - q1 - q2).detach()
-        critic_loss = self.loss_func(q1, q_target) + self.loss_func(q2, q_target)
+        critic_loss = F.mse_loss(q1, q_target) + F.mse_loss(q2, q_target)
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()

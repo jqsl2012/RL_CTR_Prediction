@@ -66,7 +66,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
     for i in range(pretrain_model_len):
         pretrain_y_preds[i] = model_dict[i](features).detach()
 
-    choose_model_lens = range(2, pretrain_model_len + 1)
+    choose_model_lens = range(1, pretrain_model_len + 1)
     for i in choose_model_lens:  # 根据ddqn_model的action,判断要选择ensemble的数量
         with_action_indexs = (actions == i).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i]
@@ -83,12 +83,12 @@ def generate_preds(model_dict, features, actions, prob_weights,
         if i == pretrain_model_len:
             current_y_preds = torch.sum(torch.mul(current_prob_weights, current_pretrain_y_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
-        # elif i == 1:
-        #     current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
-        #     for k in range(pretrain_model_len):
-        #         choose_model_indexs = (current_choose_models == k).nonzero()[:, 0]
-        #         current_y_preds[choose_model_indexs, 0] = current_pretrain_y_preds[choose_model_indexs, k]
-        #     y_preds[with_action_indexs, :] = current_y_preds
+        elif i == 1:
+            current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+            for k in range(pretrain_model_len):
+                choose_model_indexs = (current_choose_models == k).nonzero()[:, 0]
+                current_y_preds[choose_model_indexs, 0] = current_pretrain_y_preds[choose_model_indexs, k]
+            y_preds[with_action_indexs, :] = current_y_preds
         else:
             current_pretrain_y_preds = torch.cat([
                 pretrain_y_preds[l][with_action_indexs] for l in range(pretrain_model_len)
@@ -182,7 +182,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-
+            print(actions, prob_weights)
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -397,7 +397,7 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='Hybrid_RL_v2', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)
-    parser.add_argument('--init_lr_a', type=float, default=1e-4)
+    parser.add_argument('--init_lr_a', type=float, default=1e-3)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-3)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
@@ -405,7 +405,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=4096)
+    parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
