@@ -204,7 +204,6 @@ class hybrid_actors(nn.Module):
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
         d_action = torch.clamp(d_action_q_values + Normal(self.mean_d, self.std_d * 0.1).sample(), -1, 1)
-        # d_actions = d_action_dist.sample()
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
@@ -219,7 +218,7 @@ class hybrid_actors(nn.Module):
         return c_actions_means, d_actions_q_values
 
 
-class Hybrid_RL_Model():
+class Hybrid_TD3_Model():
     def __init__(
             self,
             feature_nums,
@@ -282,7 +281,7 @@ class Hybrid_RL_Model():
         b_r = torch.unsqueeze(transitions[:, -1], dim=1)
 
         # current state's action_values
-        c_actions_means, d_actions_q_values, c_actions_entropy, d_actions_entropy = self.Hybrid_Actor.evaluate(b_s)
+        c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
         # critic
         q_target_critic = b_r + self.gamma * self.Critic_.evaluate(b_s_, c_actions_means, d_actions_q_values)
         q_critic = self.Critic.evaluate(b_s, b_c_a, b_d_a)
@@ -295,7 +294,7 @@ class Hybrid_RL_Model():
     def choose_action(self, state, exploration_rate):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
-            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state, exploration_rate)
+            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state)
 
         self.Hybrid_Actor.train()
         return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions

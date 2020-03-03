@@ -27,7 +27,7 @@ def setup_seed(seed):
 
 
 def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size, memory_size, device, campaign_id):
-    RL_model = hybrid_rl_model.Hybrid_RL_Model(feature_nums, field_nums, latent_dims,
+    RL_model = td3_model.Hybrid_TD3_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums, lr_C_A=init_lr_a, lr_D_A=init_lr_a, lr_C=init_lr_c,
                                                campaign_id=campaign_id, batch_size=64,
                                                memory_size=memory_size, device=device)
