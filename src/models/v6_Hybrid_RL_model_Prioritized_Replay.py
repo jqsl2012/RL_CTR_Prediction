@@ -118,7 +118,7 @@ class Critic(nn.Module):
 
         deep_input_dims = self.input_dims + self.c_action_nums + self.d_action_nums
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [400, 300, 300]
         self.mlp = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -126,10 +126,10 @@ class Critic(nn.Module):
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], 1)
+            # nn.Linear(neuron_nums[1], neuron_nums[2]),
+            # nn.BatchNorm1d(neuron_nums[2]),
+            # nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
         )
 
     def evaluate(self, input, c_actions, d_actions): # actions 包括连续与非连续
@@ -149,7 +149,7 @@ class hybrid_actors(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [400, 300, 300]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -157,17 +157,17 @@ class hybrid_actors(nn.Module):
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU()
+            # nn.Linear(neuron_nums[1], neuron_nums[2]),
+            # nn.BatchNorm1d(neuron_nums[2]),
+            # nn.ReLU()
         )# 特征提取层
 
         self.c_action_layer = nn.Sequential(
-            nn.Linear(neuron_nums[2], self.c_action_dims),
+            nn.Linear(neuron_nums[1], self.c_action_dims),
             nn.Tanh()
         )
         self.d_action_layer = nn.Sequential(
-            nn.Linear(neuron_nums[2], self.d_action_dims),
+            nn.Linear(neuron_nums[1], self.d_action_dims),
             nn.Tanh()
         )
 
@@ -186,14 +186,14 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_action_dist = c_action_means + exploration_rate * Normal(self.mean, self.std * 1).sample()
+        c_action_dist = c_action_means + Normal(self.mean, self.std * 1).sample()
         # print(c_action_dist)
         # print(Normal(c_action_means, self.std).sample())
         # print(c_action_means + Normal(self.mean, self.std).sample())
         c_actions = torch.clamp(c_action_dist, -1, 1)  # 用于返回训练
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = torch.clamp(d_action_q_values + exploration_rate * Normal(self.mean_d, self.std_d * 1).sample(), -1, 1)
+        d_action = torch.clamp(d_action_q_values + Normal(self.mean_d, self.std_d * 1).sample(), -1, 1)
         # d_actions = d_action_dist.sample()
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 

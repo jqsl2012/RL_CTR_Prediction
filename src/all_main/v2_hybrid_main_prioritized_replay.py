@@ -162,10 +162,9 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         critic_loss = rl_model.learn_c(choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights)
 
-        if i % 3 == 0:
-            actor_loss = rl_model.learn_a(b_s)
-            rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-            rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+        actor_loss = rl_model.learn_a(b_s)
+        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
+        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
         learn_steps += 1
         total_critic_loss = critic_loss
@@ -404,7 +403,7 @@ if __name__ == '__main__':
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL_v2', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=300)
+    parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--init_lr_a', type=float, default=1e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-3)

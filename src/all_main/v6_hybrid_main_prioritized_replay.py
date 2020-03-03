@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v2_Hybrid_RL_model_Prioritized_Replay as hybrid_rl_model
+import src.models.v6_Hybrid_RL_model_Prioritized_Replay as hybrid_rl_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -66,7 +66,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
     for i in range(pretrain_model_len):
         pretrain_y_preds[i] = model_dict[i](features).detach()
 
-    choose_model_lens = range(2, pretrain_model_len + 1)
+    choose_model_lens = range(1, pretrain_model_len + 1)
     for i in choose_model_lens:  # 根据ddqn_model的action,判断要选择ensemble的数量
         with_action_indexs = (actions == i).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i]
@@ -162,20 +162,20 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         critic_loss = rl_model.learn_c(choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights)
 
-        if i % 3 == 0:
-            actor_loss = rl_model.learn_a(b_s)
-            rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-            rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+        # if i % 2 == 0:
+        actor_loss = rl_model.learn_a(b_s)
+        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
+        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
 
         learn_steps += 1
-        total_critic_loss = critic_loss
-        total_actor_loss = actor_loss
+        total_critic_loss += critic_loss
+        total_actor_loss += actor_loss
         log_intervals += 1
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_critic_loss, total_actor_loss, total_rewards / log_intervals, \
+    return total_critic_loss / log_intervals, total_actor_loss / log_intervals, total_rewards / log_intervals, \
            roc_auc_score(targets, predicts), learn_steps
 
 
@@ -401,10 +401,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_RL_v2', help='LR, FM, FFM, W&D')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--model_name', default='Hybrid_RL_v6', help='LR, FM, FFM, W&D') # 300-v6, 100-v6_1
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=300)
+    parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--init_lr_a', type=float, default=1e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-3)
