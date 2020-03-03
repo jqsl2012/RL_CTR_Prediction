@@ -280,14 +280,23 @@ class Hybrid_TD3_Model():
         b_d_a = transitions[:, self.field_nums + self.c_action_nums: self.field_nums + self.c_action_nums + self.d_action_nums]
         b_r = torch.unsqueeze(transitions[:, -1], dim=1)
 
-        # current state's action_values
-        c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
-        # critic
-        q_target_critic = b_r + self.gamma * self.Critic_.evaluate(b_s_, c_actions_means, d_actions_q_values)
-        q_critic = self.Critic.evaluate(b_s, b_c_a, b_d_a)
-        td_error_critic = q_target_critic - q_critic
+        c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
+        next_c_actions = torch.clamp(
+            c_actions_means_next + torch.clamp(Normal(self.Hybrid_Actor_.mean, self.Hybrid_Actor_.std * 0.2), -0.5,
+                                               0.5), -1, 1)
+        next_d_actions = torch.clamp(
+            d_actions_q_values_next + torch.clamp(Normal(self.Hybrid_Actor_.mean, self.Hybrid_Actor_.std * 0.2), -0.5,
+                                                  0.5), -1, 1)
 
-        td_errors = td_error_critic
+        q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
+        q_target = torch.min(q1_target, q2_target)
+        q_target = b_r + self.gamma * q_target
+
+        q1, q2 = self.Critic(b_s, b_c_a, b_d_a)
+
+        critic_td_error = (2 * q_target - q1 - q2).detach()
+
+        td_errors = critic_td_error
 
         self.memory.add(td_errors.detach(), transitions)
 
