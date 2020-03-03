@@ -190,9 +190,6 @@ class hybrid_actors(nn.Module):
         self.std = torch.ones(size=[1, self.c_action_dims]).cuda()
         self.mean = torch.zeros(size=[1, self.c_action_dims]).cuda()
 
-        self.std_d = torch.ones(size=[1, self.d_action_dims]).cuda()
-        self.mean_d = torch.zeros(size=[1, self.d_action_dims]).cuda()
-
     def act(self, input):
         obs = self.bn_input(input)
         # obs = input
@@ -205,7 +202,7 @@ class hybrid_actors(nn.Module):
 
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = torch.clamp(d_action_q_values + Normal(self.mean_d, self.std_d * 0.2).sample(), -1, 1)
+        d_action = torch.clamp(d_action_q_values + Normal(self.mean, self.std * 0.2).sample(), -1, 1)
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
@@ -277,8 +274,6 @@ class Hybrid_TD3_Model():
         self.learn_iter = 0
         self.policy_freq = 2
 
-
-
     def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
         b_s = embedding_layer.forward(transitions[:, :self.field_nums].long())
         b_s_ = b_s
@@ -289,10 +284,10 @@ class Hybrid_TD3_Model():
         c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
 
         next_c_actions = torch.clamp(
-            c_actions_means_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5,
+            c_actions_means_next + torch.clamp(Normal(self.action_mean.expand_as(c_actions_means_next), self.action_std.expand_as(c_actions_means_next) * 0.4).sample(), -0.5,
                                                0.5), -1, 1)
         next_d_actions = torch.clamp(
-            d_actions_q_values_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5,
+            d_actions_q_values_next + torch.clamp(Normal(self.action_mean.expand_as(c_actions_means_next), self.action_std.expand_as(c_actions_means_next) * 0.4).sample(), -0.5,
                                                   0.5), -1, 1)
 
         q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
@@ -345,8 +340,8 @@ class Hybrid_TD3_Model():
 
         c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
         print(torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5))
-        next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5), -1, 1)
-        next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.2).sample(), -0.5, 0.5), -1, 1)
+        next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5, 0.5), -1, 1)
+        next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.action_mean, self.action_std * 0.4).sample(), -0.5, 0.5), -1, 1)
 
         q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
         q_target = torch.min(q1_target, q2_target)
