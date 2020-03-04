@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.Hybrid_TD3_model as td3_model
+import src.models.Hybrid_TD3_model_Uniform as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -146,7 +146,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         embedding_vectors = embedding_layer.forward(features)
 
-        c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors, exploration_rate)
+        c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors)
 
         y_preds, rewards = \
             generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, labels, device, mode='train')
@@ -156,7 +156,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_d_actions.float(), rewards], dim=1)
 
-        rl_model.store_transition(transitions, embedding_layer)
+        rl_model.store_transition(transitions)
 
         if i >= 10:
             for i in range(3):
