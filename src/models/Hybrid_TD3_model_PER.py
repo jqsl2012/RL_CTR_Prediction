@@ -324,7 +324,7 @@ class Hybrid_TD3_Model():
 
         self.memory.add(td_errors.detach(), transitions)
 
-    def choose_action(self, state, exploration_rate):
+    def choose_action(self, state):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
             c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state)
