@@ -322,30 +322,43 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         train_start_time = datetime.datetime.now()
 
-        train_critic_loss, train_average_rewards, train_auc, learn_steps = train(rl_model, model_dict,
-                                                                     train_data_loader, test_data_loader, loss, embedding_layer,
-                                                                     exploration_rate, device)
-
         # rl_model.optimizer_c.param_groups[0]['lr'] = max(init_lr_c - epoch_i * (init_lr_c - end_lr_c) / (epoch - 100), end_lr_c)
         # rl_model.optimizer_c_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
         # rl_model.optimizer_d_a.param_groups[0]['lr'] = max(init_lr_a - epoch_i * (init_lr_a - end_lr_a) / (epoch - 100), end_lr_a)
 
-        if (epoch_i + 1) % 10 == 0:
-            exploration_rate = max(init_exploration_rate - (init_exploration_rate - end_exploration_rate) / (epoch - epoch // 10), end_exploration_rate)
+        for i, (features, labels) in enumerate(tqdm.tqdm(train_data_loader, smoothing=0, mininterval=1.0)):
+            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
-        rewards_records.append(train_average_rewards)
+            embedding_vectors = embedding_layer.forward(features)
 
-        auc, valid_loss, test_rewards = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
-                               device)
-        valid_aucs.append(auc)
-        valid_losses.append(valid_loss)
+            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors,
+                                                                                                   exploration_rate)
+
+            y_preds, rewards = \
+                generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, labels, device,
+                               mode='train')
+
+            transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_d_actions.float(), rewards],
+                                    dim=1)
+
+            rl_model.store_transition(transitions, embedding_layer)
+
+            if i >= 10:
+                critic_loss = rl_model.learn(embedding_layer)
+
+            if i % 10 == 0:
+                auc, valid_loss, test_rewards = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
+                                                     device)
+                print('steps', (i + 1) * 256, 'test_auc', auc, 'test_rewards', test_rewards)
+                rewards_records.append(test_rewards)
+
+                valid_aucs.append(auc)
+                valid_losses.append(valid_loss)
 
         train_end_time = datetime.datetime.now()
-        global_steps += learn_steps
-        print('epoch:', epoch_i, 'global_steps:', global_steps, 'training critic loss:', train_critic_loss,
-              'training average rewards',
-              train_average_rewards, 'training auc', train_auc, 'test rewards', test_rewards, 'validation auc:', auc,
-              'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
+
+        print('epoch:', epoch_i, 'test auc:', valid_aucs[-1],
+              'test loss:', valid_losses[-1], '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     end_time = datetime.datetime.now()
 
