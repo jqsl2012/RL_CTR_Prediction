@@ -44,11 +44,11 @@ class Memory(object):
 
         self.memory_counter += len(transitions)
 
-    def stochastic_sample(self):
+    def stochastic_sample(self, batch_size):
         if self.memory_counter >= self.memory_size:
-            sample_indexs = torch.Tensor(random.sample(range(self.memory_size), self.batch_size)).long().to(self.device)
+            sample_indexs = torch.Tensor(random.sample(range(self.memory_size), batch_size)).long().to(self.device)
         else:
-            sample_indexs = torch.Tensor(random.sample(range(self.memory_counter), self.batch_size)).long().to(self.device)
+            sample_indexs = torch.Tensor(random.sample(range(self.memory_counter), batch_size)).long().to(self.device)
 
         batch = self.memory[sample_indexs]
 
@@ -167,11 +167,11 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_actions = torch.clamp(c_action_means + Normal(self.mean, self.std * 0.1).sample(), -1, 1)  # 用于返回训练
+        c_actions = torch.clamp(c_action_means + torch.rand_like(c_action_means) * 0.1, -1, 1)  # 用于返回训练
 
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = torch.clamp(d_action_q_values + Normal(self.mean, self.std * 0.1).sample(), -1, 1)
+        d_action = torch.clamp(d_action_q_values + torch.randint_like(d_action_q_values) * 0.1, -1, 1)
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
@@ -241,7 +241,7 @@ class Hybrid_TD3_Model():
         self.action_std = torch.ones(size=[1, self.c_action_nums]).to(self.device)
 
         self.learn_iter = 0
-        self.policy_freq = 2
+        self.policy_freq = 4
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         self.memory.add(transitions)
@@ -272,7 +272,7 @@ class Hybrid_TD3_Model():
         self.learn_iter += 1
 
         # sample
-        choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
+        batch_memory = self.memory.stochastic_sample(self.batch_size)
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
         b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.c_action_nums]
@@ -285,8 +285,8 @@ class Hybrid_TD3_Model():
         with torch.no_grad():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
 
-            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(Normal(self.action_mean.expand_as(c_actions_means_next), self.action_std.expand_as(c_actions_means_next) * 0.2).sample(), -0.5, 0.5), -1, 1)
-            next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(Normal(self.action_mean.expand_as(c_actions_means_next), self.action_std.expand_as(c_actions_means_next) * 0.2).sample(), -0.5, 0.5), -1, 1)
+            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randint_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
+            next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(torch.randint_like(d_actions_q_values_next), -0.5, 0.5), -1, 1)
 
             q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
             q_target = torch.min(q1_target, q2_target)

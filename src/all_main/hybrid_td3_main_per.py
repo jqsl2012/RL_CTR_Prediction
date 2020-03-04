@@ -158,10 +158,10 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         rl_model.store_transition(transitions, embedding_layer)
 
-        if i >= 10:
-            for i in range(3):
-                critic_loss = rl_model.learn(embedding_layer)
-                total_critic_loss = critic_loss
+        # if i >= 100:
+        # for i in range(3):
+        critic_loss = rl_model.learn(embedding_layer)
+        total_critic_loss = critic_loss
 
         learn_steps += 1
         log_intervals += 1

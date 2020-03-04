@@ -162,14 +162,15 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         critic_loss = rl_model.learn_c(choose_idx, b_s, b_c_a, b_d_a, b_discrete_a, b_r, b_s_, ISweights)
 
-        # if i % 2 == 0:
-        actor_loss = rl_model.learn_a(b_s)
-        rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
-        rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+        if i >= 100:
+            actor_loss = rl_model.learn_a(b_s)
+            rl_model.soft_update(rl_model.Hybrid_Actor, rl_model.Hybrid_Actor_)
+            rl_model.soft_update(rl_model.Critic, rl_model.Critic_)
+            total_critic_loss = critic_loss
+            total_actor_loss+= actor_loss
 
         learn_steps += 1
-        total_critic_loss += critic_loss
-        total_actor_loss += actor_loss
+
         log_intervals += 1
         total_rewards += torch.sum(rewards, dim=0).item()
 
@@ -183,6 +184,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
+    test_rewards = 0
     with torch.no_grad():
         for i, (features, labels) in enumerate(data_loader):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
@@ -200,7 +202,9 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
             intervals += 1
             total_test_loss += test_loss.item()
 
-    return roc_auc_score(targets, predicts), total_test_loss / intervals
+            test_rewards += torch.sum(rewards, dim=0).item()
+
+    return roc_auc_score(targets, predicts), total_test_loss / intervals, test_rewards / intervals
 
 
 def submission(rl_model, model_dict, embedding_layer, data_loader, device):
@@ -333,7 +337,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         rewards_records.append(train_average_rewards)
 
-        auc, valid_loss = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
+        auc, valid_loss, test_rewards = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
                                device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
@@ -342,14 +346,14 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
         global_steps += learn_steps
         print('epoch:', epoch_i, 'global_steps:', global_steps, 'training critic loss:', train_critic_loss, 'training actor loss:', train_actor_loss,
               'training average rewards',
-              train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
+              train_average_rewards, 'test rewards', test_rewards, 'training auc', train_auc, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     end_time = datetime.datetime.now()
 
     test_rl_model = rl_model
 
-    auc, test_loss = test(test_rl_model, model_dict, embedding_layer, test_data_loader, loss,
+    auc, test_loss, test_rewards = test(test_rl_model, model_dict, embedding_layer, test_data_loader, loss,
                           device)
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
@@ -401,7 +405,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_RL_v6', help='LR, FM, FFM, W&D') # 300-v6, 100-v6_1
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)

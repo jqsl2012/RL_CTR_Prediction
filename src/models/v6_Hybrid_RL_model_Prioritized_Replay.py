@@ -260,8 +260,8 @@ class Hybrid_RL_Model():
         self.Critic_ = Critic(self.input_dims, self.c_action_nums,  self.d_action_nums).to(self.device)
 
         # 优化器
-        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A, weight_decay=1e-5)
-        self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A)
+        self.optimizer_c = torch.optim.Adam(self.Critic.parameters(), lr=self.lr_C, weight_decay=1e-2)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
