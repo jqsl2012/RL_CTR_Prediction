@@ -29,7 +29,7 @@ def setup_seed(seed):
 def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size, memory_size, device, campaign_id):
     RL_model = td3_model.Hybrid_TD3_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums, lr_C_A=init_lr_a, lr_D_A=init_lr_a, lr_C=init_lr_c,
-                                               campaign_id=campaign_id, batch_size=64,
+                                               campaign_id=campaign_id, batch_size=256,
                                                memory_size=memory_size, device=device)
     return RL_model
 
@@ -115,14 +115,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_with_clk_indexs] * 1,
-            current_basic_rewards[current_with_clk_indexs] * -1
+            current_basic_rewards[current_with_clk_indexs] * 0
         )
 
         without_clk_rewards = torch.where(
             current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_without_clk_indexs] * 1,
-            current_basic_rewards[current_without_clk_indexs] * -1
+            current_basic_rewards[current_without_clk_indexs] * 0
         )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -158,16 +158,18 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         rl_model.store_transition(transitions, embedding_layer)
 
-        critic_loss = rl_model.learn(embedding_layer)
+        if i >= 10:
+            for i in range(3):
+                critic_loss = rl_model.learn(embedding_layer)
+                total_critic_loss = critic_loss
 
         learn_steps += 1
-        total_critic_loss += critic_loss
         log_intervals += 1
         total_rewards += torch.sum(rewards, dim=0).item()
 
         torch.cuda.empty_cache()  # 清除缓存
 
-    return total_critic_loss / log_intervals, total_rewards / log_intervals, \
+    return total_critic_loss, total_rewards / log_intervals, \
            roc_auc_score(targets, predicts), learn_steps
 
 
@@ -175,6 +177,8 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
+    test_rewards = 0
+
     with torch.no_grad():
         for i, (features, labels) in enumerate(data_loader):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
@@ -192,7 +196,9 @@ def test(rl_model, model_dict, embedding_layer, data_loader, loss, device):
             intervals += 1
             total_test_loss += test_loss.item()
 
-    return roc_auc_score(targets, predicts), total_test_loss / intervals
+            test_rewards += torch.sum(rewards, dim=0).item()
+
+    return roc_auc_score(targets, predicts), total_test_loss / intervals, test_rewards / intervals
 
 
 def submission(rl_model, model_dict, embedding_layer, data_loader, device):
@@ -325,7 +331,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         rewards_records.append(train_average_rewards)
 
-        auc, valid_loss = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
+        auc, valid_loss, test_rewards = test(rl_model, model_dict, embedding_layer, test_data_loader, loss,
                                device)
         valid_aucs.append(auc)
         valid_losses.append(valid_loss)
@@ -334,14 +340,14 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
         global_steps += learn_steps
         print('epoch:', epoch_i, 'global_steps:', global_steps, 'training critic loss:', train_critic_loss,
               'training average rewards',
-              train_average_rewards, 'training auc', train_auc, 'validation auc:', auc,
+              train_average_rewards, 'training auc', train_auc, 'test rewards', test_rewards, 'validation auc:', auc,
               'validation loss:', valid_loss, '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     end_time = datetime.datetime.now()
 
     test_rl_model = rl_model
 
-    auc, test_loss = test(test_rl_model, model_dict, embedding_layer, test_data_loader, loss,
+    auc, test_loss, test_rewards = test(test_rl_model, model_dict, embedding_layer, test_data_loader, loss,
                           device)
     print('\ntest auc:', auc, datetime.datetime.now(), '[{}s]'.format((end_time - start_time).seconds))
 
@@ -385,7 +391,6 @@ def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
             if valid_losses[-1] > valid_losses[-2] and valid_losses[-2] > valid_losses[-3] and valid_losses[-3] > \
                     valid_losses[-4] and valid_losses[-4] > valid_losses[-5]:
                 return True
-
     return False
 
 
@@ -393,10 +398,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_RL_v2', help='LR, FM, FFM, W&D')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--model_name', default='Hybrid_TD3_V1', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--epoch', type=int, default=100)
+    parser.add_argument('--epoch', type=int, default=300)
     parser.add_argument('--init_lr_a', type=float, default=1e-3)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
     parser.add_argument('--init_lr_c', type=float, default=1e-3)
@@ -405,7 +410,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
