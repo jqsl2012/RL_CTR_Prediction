@@ -67,11 +67,11 @@ class Memory(object):
             min_prob = torch.min(self.priorities_)
             # 采样概率分布
             P = torch.div(self.priorities_, total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P, replace=False)).long().to(self.device)
         else:
             min_prob = torch.min(self.priorities_[:self.memory_counter, :])
             P = torch.div(self.priorities_[:self.memory_counter, :], total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P, replace=False)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
@@ -166,7 +166,7 @@ class D_Actor(nn.Module):
         self.input_dims = input_dims
         self.action_dims = action_dims
 
-        hidden_dims = [256, 256]
+        hidden_dims = [512, 256]
         self.mlp_l1 = nn.Linear(self.input_dims, hidden_dims[0])
         self.mlp_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
 
@@ -207,7 +207,7 @@ class Hybrid_Q_network(nn.Module):
         self.input_dims = input_dims
         self.action_dims = action_dims
 
-        hidden_dims = [256, 256]
+        hidden_dims = [512, 256]
         # Q1
         self.mlp_q1_l1 = nn.Linear(self.input_dims, hidden_dims[0])
         self.mlp_q1_l2 = nn.Linear(hidden_dims[0], hidden_dims[1]) # 两层隐层用于提取特征
@@ -335,7 +335,7 @@ class Hybrid_RL_Model():
 
         b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
         b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.action_nums]
-        b_discrete_a = torch.unsqueeze(batch_memory[:, self.field_nums + self.action_nums], 1).long()
+        b_discrete_a = torch.unsqueeze(batch_memory[:, self.field_nums + self.action_nums] - 1, 1).long()
         b_r = torch.unsqueeze(batch_memory[:, -1], 1)
         b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
 
@@ -350,6 +350,7 @@ class Hybrid_RL_Model():
             q_d_next_target = (b_r + self.gamma * (torch.min(d_q1_next, d_q2_next) - self.d_alpha * d_log_probs_next) * d_action_probs_next).mean(dim=-1).unsqueeze(-1)
 
         c_q1, d_q1, c_q2, d_q2 = self.Critic.forward(b_s, b_c_a)
+
         # c_actor's criric loss
         c_critic_loss = ISweights * ((c_q1 - q_c_next_target).pow(2) + (c_q2 - q_c_next_target).pow(2))
         # c_critic_loss = F.mse_loss(c_q1, q_c_next_target) + F.mse_loss(c_q2, q_c_next_target)
@@ -365,17 +366,18 @@ class Hybrid_RL_Model():
         self.optimizer_c.step()
 
         td_errors = ((2 * q_c_next_target - c_q1 - c_q2) / 2 + 1e-6) + ((2 * q_d_next_target - d_q1.gather(1, b_discrete_a) - d_q2.gather(1, b_discrete_a)) / 2 + 1e-6)
-        self.memory.batch_update(choose_idx, td_errors)
+        self.memory.batch_update(choose_idx, td_errors.detach())
 
         c_action, c_log_probs = self.C_Actor.sample(b_s)
         d_action, d_action_probs, d_log_probs = self.D_Actor.sample(b_s)
 
         c_q1, d_q1, c_q2, d_q2 = self.Critic.forward(b_s, b_c_a)
         # c_actor's loss
+
         c_actor_loss = (ISweights * (self.c_alpha * c_log_probs - torch.min(c_q1, c_q2))).mean()
         # c_actor_loss = (self.c_alpha * c_log_probs - torch.min(c_q1, c_q2)).mean()
         self.optimizer_c_a.zero_grad()
-        c_actor_loss.backward()
+        c_actor_loss.backward(retain_graph=True)
         self.optimizer_c_a.step()
 
         c_entropies = c_log_probs
@@ -384,22 +386,28 @@ class Hybrid_RL_Model():
         d_actor_loss = (ISweights * (d_action_probs * (self.d_alpha * d_log_probs - torch.min(d_q1, d_q2)))).mean()
         # d_actor_loss = (d_action_probs * (self.d_alpha * d_log_probs - torch.min(d_q1, d_q2))).mean()
         self.optimizer_d_a.zero_grad()
-        d_actor_loss.backward()
+        d_actor_loss.backward(retain_graph=True)
         self.optimizer_d_a.step()
 
         d_entropies = torch.sum(d_action_probs * d_log_probs, dim=-1)
 
         # c_actor's entropy tuning loss
-        c_aplha_loss = -(self.c_log_alpha * (c_entropies + self.c_target_entropy).detach()).mean()
+        c_aplha_loss = -(self.c_log_alpha * (c_entropies + self.c_target_entropy)).mean()
         self.optimizer_c_alpha.zero_grad()
-        c_aplha_loss.backward()
+        c_aplha_loss.backward(retain_graph=True)
         self.optimizer_c_alpha.step()
 
+        self.c_alpha = self.c_log_alpha.exp()
+
         # d_actor's entropy tuning loss
-        d_alpha_loss = -(self.d_log_alpha * (d_entropies + self.d_target_entropy).detach()).mean()
+        d_alpha_loss = -(self.d_log_alpha * (d_entropies + self.d_target_entropy)).mean()
         self.optimizer_d_alpha.zero_grad()
-        d_alpha_loss.backward()
+        d_alpha_loss.backward(retain_graph=True)
         self.optimizer_d_alpha.step()
 
-        return critic_loss
+        self.d_alpha = self.d_log_alpha.exp()
+
+        self.soft_update(self.Critic, self.Critic_)
+
+        return critic_loss.item()
 
