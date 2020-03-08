@@ -159,6 +159,9 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
         rl_model.store_transition(transitions)
 
         critic_loss = rl_model.learn(embedding_layer)
+        rl_model.learn_c_a(embedding_layer)
+        rl_model.learn_o(embedding_layer)
+
         total_critic_loss = critic_loss
 
         learn_steps += 1
