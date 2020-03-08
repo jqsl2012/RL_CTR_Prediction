@@ -149,7 +149,7 @@ class C_Actor(nn.Module): # Gaussion Policy
         actions = y_t # 返回的连续型动作
 
         # Enforcing Action Bound
-        log_prob = normal.log_prob(x_t) - torch.log(1 - y_t.pow(2) + 1e-6).sum(-1, keepdim=True)
+        log_prob = (normal.log_prob(x_t) - torch.log(1 - y_t.pow(2) + 1e-6)).sum(-1, keepdim=True)
 
         return actions, log_prob
 
@@ -226,13 +226,13 @@ class Hybrid_Q_network(nn.Module):
 
     def forward(self, state, action):
         x1 = F.relu(self.mlp_q1_l1(state))
-        x1 = F.relu(self.mlp_q1_l2(state))
+        x1 = F.relu(self.mlp_q1_l2(x1))
 
         c_q1 = self.c_q1(torch.cat([x1, action], dim=-1))
         d_q1 = self.d_q1(x1)
 
         x2 = F.relu(self.mlp_q2_l1(state))
-        x2 = F.relu(self.mlp_q2_l2(state))
+        x2 = F.relu(self.mlp_q2_l2(x2))
 
         c_q2 = self.c_q2(torch.cat([x2, action], dim=-1))
         d_q2 = self.d_q2(x2)
@@ -304,7 +304,7 @@ class Hybrid_RL_Model():
         self.d_alpha = self.d_log_alpha.exp()
         self.optimizer_d_alpha = torch.optim.Adam([self.d_log_alpha], lr=lr_C)
 
-    def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
+    def store_transition(self, transitions): # 所有的值都应该弄成float
         self.memory.add(transitions)
 
     def choose_action(self, state):
@@ -343,13 +343,13 @@ class Hybrid_RL_Model():
             c_action_next, c_log_probs_next = self.C_Actor.sample(b_s_)
             d_action_next, d_action_probs_next, d_log_probs_next = self.D_Actor.sample(b_s_)
 
-            c_q1_next, d_q1_next, c_q2_next, d_q2_next = self.Critic_(b_s_, c_action_next)
+            c_q1_next, d_q1_next, c_q2_next, d_q2_next = self.Critic_.forward(b_s_, c_action_next)
 
             q_c_next_target = b_r + self.gamma * (torch.min(c_q1_next, c_q2_next) - self.c_alpha * c_log_probs_next)
 
-            q_d_next_target = b_r + self.gamma * (torch.min(d_q1_next, d_q2_next) - self.d_alpha * d_log_probs_next) * d_action_probs_next
+            q_d_next_target = (b_r + self.gamma * (torch.min(d_q1_next, d_q2_next) - self.d_alpha * d_log_probs_next) * d_action_probs_next).mean(dim=-1).unsqueeze(-1)
 
-        c_q1, d_q1, c_q2, d_q2 = self.Critic(b_s, b_c_a)
+        c_q1, d_q1, c_q2, d_q2 = self.Critic.forward(b_s, b_c_a)
         # c_actor's criric loss
         c_critic_loss = ISweights * ((c_q1 - q_c_next_target).pow(2) + (c_q2 - q_c_next_target).pow(2))
         # c_critic_loss = F.mse_loss(c_q1, q_c_next_target) + F.mse_loss(c_q2, q_c_next_target)
@@ -364,13 +364,13 @@ class Hybrid_RL_Model():
         critic_loss.backward()
         self.optimizer_c.step()
 
-        td_errors = ((2 * q_c_next_target - c_q1 - c_q2) / 2 + 1e-6) + ((2 * q_d_next_target - d_q1 - d_q2) / 2 + 1e-6)
+        td_errors = ((2 * q_c_next_target - c_q1 - c_q2) / 2 + 1e-6) + ((2 * q_d_next_target - d_q1.gather(1, b_discrete_a) - d_q2.gather(1, b_discrete_a)) / 2 + 1e-6)
         self.memory.batch_update(choose_idx, td_errors)
 
-        c_action, c_log_probs = self.C_Actor(b_s)
-        d_action, d_action_probs, d_log_probs = self.D_Actor(b_s)
+        c_action, c_log_probs = self.C_Actor.sample(b_s)
+        d_action, d_action_probs, d_log_probs = self.D_Actor.sample(b_s)
 
-        c_q1, d_q1, c_q2, d_q2 = self.Critic(b_s, b_c_a)
+        c_q1, d_q1, c_q2, d_q2 = self.Critic.forward(b_s, b_c_a)
         # c_actor's loss
         c_actor_loss = (ISweights * (self.c_alpha * c_log_probs - torch.min(c_q1, c_q2))).mean()
         # c_actor_loss = (self.c_alpha * c_log_probs - torch.min(c_q1, c_q2)).mean()
