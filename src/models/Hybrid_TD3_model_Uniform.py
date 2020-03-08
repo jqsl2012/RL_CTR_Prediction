@@ -167,11 +167,11 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_actions = torch.clamp(c_action_means + torch.rand_like(c_action_means) * 0.1, -1, 1)  # 用于返回训练
+        c_actions = torch.clamp(c_action_means + torch.randn_like(c_action_means) * 0.1, -1, 1)  # 用于返回训练
 
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = torch.clamp(d_action_q_values + torch.randint_like(d_action_q_values) * 0.1, -1, 1)
+        d_action = torch.clamp(d_action_q_values + torch.randn_like(d_action_q_values) * 0.1, -1, 1)
         ensemble_d_actions = torch.argsort(-d_action)[:, 0] + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
@@ -285,8 +285,8 @@ class Hybrid_TD3_Model():
         with torch.no_grad():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
 
-            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randint_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
-            next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(torch.randint_like(d_actions_q_values_next), -0.5, 0.5), -1, 1)
+            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
+            next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(torch.randn_like(d_actions_q_values_next) * 0.2, -0.5, 0.5), -1, 1)
 
             q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
             q_target = torch.min(q1_target, q2_target)

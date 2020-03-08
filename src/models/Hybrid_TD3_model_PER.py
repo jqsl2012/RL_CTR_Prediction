@@ -49,15 +49,15 @@ class Memory(object):
 
         if memory_end > memory_start:
             self.memory[memory_start: memory_end, :] = transitions
-            self.prioritys_[memory_start: memory_end, :] = p
+            self.prioritys_[memory_start: memory_end, :] = torch.max(self.prioritys_[memory_start: memory_end, :], p)
         else:
             replace_len_1 = self.memory_size - memory_start
             self.memory[memory_start: self.memory_size, :] = transitions[0: replace_len_1]
-            self.prioritys_[memory_start: self.memory_size, :] = p[0: replace_len_1]
+            self.prioritys_[memory_start: self.memory_size, :] = torch.max(self.prioritys_[memory_start: self.memory_size, :], p[0: replace_len_1])
 
             replace_len_2 = transition_lens - replace_len_1
             self.memory[:replace_len_2, :] = transitions[replace_len_1: transition_lens]
-            self.prioritys_[:replace_len_2, :] = p[replace_len_1: transition_lens]
+            self.prioritys_[:replace_len_2, :] = torch.max(self.prioritys_[:replace_len_2, :], p[replace_len_1: transition_lens])
 
         self.memory_counter += len(transitions)
 
@@ -68,11 +68,11 @@ class Memory(object):
             min_prob = torch.min(self.prioritys_)
             # 采样概率分布
             P = torch.div(self.prioritys_, total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P, replace=False)).long().to(self.device)
         else:
             min_prob = torch.min(self.prioritys_[:self.memory_counter, :])
             P = torch.div(self.prioritys_[:self.memory_counter, :], total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P, replace=False)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
@@ -118,7 +118,17 @@ class Critic(nn.Module):
 
         deep_input_dims = self.input_dims + self.c_action_nums + self.d_action_nums
 
-        neuron_nums = [512, 256, 512]
+        neuron_nums = [400, 300, 200]
+        # self.q_1_l1 = nn.Linear(deep_input_dims, neuron_nums[0])
+        # self.q_1_l2 = nn.Linear(neuron_nums[0], neuron_nums[1])
+        # self.q_1_l3 = nn.Linear(neuron_nums[1], neuron_nums[2])
+        # self.q_1_out = nn.Linear(neuron_nums[2], 1)
+        #
+        # self.q_2_l1 = nn.Linear(deep_input_dims, neuron_nums[0])
+        # self.q_2_l2 = nn.Linear(neuron_nums[0], neuron_nums[1])
+        # self.q_2_l2 = nn.Linear(neuron_nums[1], neuron_nums[2])
+        # self.q_2_out = nn.Linear(neuron_nums[2], 1)
+
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -180,7 +190,7 @@ class hybrid_actors(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        neuron_nums = [512, 256, 512]
+        neuron_nums = [400, 300, 200]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -294,37 +304,14 @@ class Hybrid_TD3_Model():
         self.action_std = torch.ones(size=[1, self.c_action_nums]).to(self.device)
 
         self.learn_iter = 0
-        self.policy_freq = 2
+        self.policy_freq = 4
 
-    def store_transition(self, transitions, embedding_layer): # 所有的值都应该弄成float
-        b_s = embedding_layer.forward(transitions[:, :self.field_nums].long())
-        b_s_ = b_s
-        b_c_a = transitions[:, self.field_nums: self.field_nums + self.c_action_nums]
-        b_d_a = transitions[:, self.field_nums + self.c_action_nums: self.field_nums + self.c_action_nums + self.d_action_nums]
-        b_r = torch.unsqueeze(transitions[:, -1], dim=1)
+    def store_transition(self, transitions): # 所有的值都应该弄成float
+        td_errors = torch.ones(size=[len(transitions), 1]).to(self.device)
 
-        c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
+        self.memory.add(td_errors, transitions)
 
-        next_c_actions = torch.clamp(
-            c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5,
-                                               0.5), -1, 1)
-        next_d_actions = torch.clamp(
-            d_actions_q_values_next + torch.clamp(torch.randn_like(d_actions_q_values_next), -0.5,
-                                                  0.5), -1, 1)
-
-        q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
-        q_target = torch.min(q1_target, q2_target)
-        q_target = b_r + self.gamma * q_target
-
-        q1, q2 = self.Critic.evaluate(b_s, b_c_a, b_d_a)
-
-        critic_td_error = (2 * q_target - q1 - q2).detach()
-
-        td_errors = critic_td_error
-
-        self.memory.add(td_errors.detach(), transitions)
-
-    def choose_action(self, state, exploration_rate):
+    def choose_action(self, state):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
             c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state)
@@ -374,7 +361,8 @@ class Hybrid_TD3_Model():
 
         critic_td_error = (2 * q_target - q1 - q2).detach()
         # critic_loss = F.mse_loss(q1, q_target) + F.mse_loss(q2, q_target)
-        critic_loss = (ISweights * (torch.pow(q1 - q_target, 2) + torch.pow(q2 - q_target, 2))).mean()
+        # critic_loss = (ISweights * (torch.pow(q1 - q_target, 2) + torch.pow(q2 - q_target, 2))).mean()
+        critic_loss = (ISweights * (F.mse_loss(q1, q_target, reduction='none') + F.mse_loss(q2, q_target, reduction='none'))).mean()
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()

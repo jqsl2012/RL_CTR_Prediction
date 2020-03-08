@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.Hybrid_TD3_model_PER as td3_model
+import src.models.v2_Hybrid_PPO_model as hybrid_ppo_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -27,10 +27,11 @@ def setup_seed(seed):
 
 
 def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size, memory_size, device, campaign_id):
-    RL_model = td3_model.Hybrid_TD3_Model(feature_nums, field_nums, latent_dims,
-                                               action_nums=action_nums, lr_C_A=init_lr_a, lr_D_A=init_lr_a, lr_C=init_lr_c,
-                                               campaign_id=campaign_id, batch_size=256,
-                                               memory_size=memory_size, device=device)
+    RL_model = hybrid_ppo_model.Hybrid_PPO_Model(feature_nums, field_nums, latent_dims,
+                                                 action_nums=action_nums,
+                                                 campaign_id=campaign_id, batch_size=64,
+                                                 init_lr_c=init_lr_c, init_lr_a=init_lr_a,
+                                                 memory_size=batch_size, device=device)
     return RL_model
 
 
@@ -146,10 +147,10 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
 
             embedding_vectors = embedding_layer.forward(features)
 
-            actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-            # print(actions, prob_weights)
-            y, rewards = generate_preds(model_dict, features, actions, prob_weights,
-                                                          labels, device, mode='test')
+            c_as, d_as = rl_model.choose_best_a(embedding_vectors)
+
+            y, rewards = generate_preds(model_dict, features, d_as, c_as,
+                                        labels, device, mode='test')
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
             predicts.extend(y.tolist())
@@ -157,8 +158,8 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
 
             test_rewards = torch.cat([test_rewards, rewards], dim=0)
 
-            final_actions = torch.cat([final_actions, actions], dim=0)
-            final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
+            final_actions = torch.cat([final_actions, d_as], dim=0)
+            final_prob_weights = torch.cat([final_prob_weights, c_as], dim=0)
 
     return roc_auc_score(targets, predicts), predicts, test_rewards.mean().item(), final_actions, final_prob_weights
 
@@ -201,7 +202,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
                                                     num_workers=8)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 16, num_workers=8)
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 32, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
     FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
@@ -286,25 +287,25 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             embedding_vectors = embedding_layer.forward(features)
 
-            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors)
+            c_as, d_as = rl_model.choose_a(embedding_vectors)
 
             y_preds, rewards = \
-                generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, labels, device,
-                               mode='train')
+                generate_preds(model_dict, features, d_as[2], c_as[2], labels, device, mode='train')
 
-            transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_d_actions.float(), rewards],
-                                    dim=1)
+            rl_model.store_memory(features, c_as[0], c_as[1], d_as[0], d_as[1], rewards)
 
-            rl_model.store_transition(transitions)
+            if i >= 100:
+                states, states_, old_c_a, old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards = rl_model.memory()
+                loss = rl_model.learn(embedding_layer.forward(states), embedding_layer.forward(states_), old_c_a,
+                                      old_c_a_logprobs, old_d_a, old_d_a_logprobs, rewards)
 
-            if (i + 1) >= 50000:
-                critic_loss = rl_model.learn(embedding_layer)
-                train_critics.append(critic_loss)
+                train_critics.append(loss)
 
-                if (i + 1) % 5000 == 0:
-                    global_steps += batch_size * 5000
-                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-                                                         device)
+                if i % 10 == 0:
+                    global_steps += batch_size * 10
+                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                              test_data_loader,
+                                                                              device)
                     print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
                     rewards_records.append(test_rewards)
                     timesteps.append(global_steps)
@@ -312,7 +313,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         train_end_time = datetime.datetime.now()
 
-        print('epoch:', epoch_i, 'test auc:', valid_aucs[-1], '[{}s]'.format((train_end_time - train_start_time).seconds))
+        print('epoch:', epoch_i, 'test auc:', valid_aucs[-1],
+              '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     submission_path = data_path + dataset_name + campaign_id + model_name + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
@@ -339,6 +341,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     train_critics_df = pd.DataFrame(data=train_critics)
     train_critics_df.to_csv(submission_path + 'train_critics.csv', header=None)
 
+
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
     if type == 'auc':
         if len(valid_aucs) > 5:
@@ -358,7 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V2', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='Hybrid_PPO_V3', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=1e-3)
@@ -369,7 +372,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 

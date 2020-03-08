@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.Hybrid_TD3_model_PER as td3_model
+import src.models.Hybrid_TD3_model_Uniform as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -147,7 +147,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-            # print(actions, prob_weights)
+
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -201,7 +201,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
                                                     num_workers=8)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 16, num_workers=8)
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 32, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
     FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
@@ -297,14 +297,14 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if (i + 1) >= 50000:
+            if i >= 50000:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
-
-                if (i + 1) % 5000 == 0:
+                if i % 5000 == 0:
                     global_steps += batch_size * 5000
-                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-                                                         device)
+                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                              test_data_loader,
+                                                                              device)
                     print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
                     rewards_records.append(test_rewards)
                     timesteps.append(global_steps)
@@ -312,7 +312,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         train_end_time = datetime.datetime.now()
 
-        print('epoch:', epoch_i, 'test auc:', valid_aucs[-1], '[{}s]'.format((train_end_time - train_start_time).seconds))
+        print('epoch:', epoch_i, 'test auc:', valid_aucs[-1],
+              '[{}s]'.format((train_end_time - train_start_time).seconds))
 
     submission_path = data_path + dataset_name + campaign_id + model_name + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
@@ -339,6 +340,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     train_critics_df = pd.DataFrame(data=train_critics)
     train_critics_df.to_csv(submission_path + 'train_critics.csv', header=None)
 
+
 def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
     if type == 'auc':
         if len(valid_aucs) > 5:
@@ -358,7 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V2', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='Hybrid_TD3_Uniform_V2', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=1e-3)
