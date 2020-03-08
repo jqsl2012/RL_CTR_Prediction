@@ -162,7 +162,7 @@ def train(rl_model, model_dict, data_loader, embedding_layer, exploration_rate, 
 
         critic_loss = rl_model.learn(choose_idx, b_s, b_c_a, b_discrete_a, b_r, b_s_, ISweights)
         c_entropies, d_q1, d_q2, c_log_probs = rl_model.learn_c_a(b_s, b_c_a, ISweights)
-        d_entropies, rl_model.learn_d_a(b_s, d_q1, d_q2, ISweights)
+        d_entropies = rl_model.learn_d_a(b_s, d_q1, d_q2, ISweights)
         rl_model.learn_c_alpha(c_entropies)
         rl_model.learn_d_alpha(d_entropies)
 
