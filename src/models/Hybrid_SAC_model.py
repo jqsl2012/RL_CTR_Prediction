@@ -329,7 +329,7 @@ class Hybrid_RL_Model():
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def learn(self, embedding_layer):
+    def sample_batch(self, embedding_layer):
         # sample
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
 
@@ -339,6 +339,9 @@ class Hybrid_RL_Model():
         b_r = torch.unsqueeze(batch_memory[:, -1], 1)
         b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
 
+        return choose_idx, b_s, b_c_a, b_discrete_a, b_r, b_s_, ISweights
+
+    def learn(self, choose_idx, b_s, b_c_a, b_discrete_a, b_r, b_s_, ISweights):
         with torch.no_grad():
             c_action_next, c_log_probs_next = self.C_Actor.sample(b_s_)
             d_action_next, d_action_probs_next, d_log_probs_next = self.D_Actor.sample(b_s_)
@@ -365,20 +368,12 @@ class Hybrid_RL_Model():
         self.optimizer_c.step()
 
         td_errors = ((2 * q_c_next_target - c_q1 - c_q2) / 2 + 1e-6) + ((2 * q_d_next_target - d_q1.gather(1, b_discrete_a) - d_q2.gather(1, b_discrete_a)) / 2 + 1e-6)
-        self.memory.batch_update(choose_idx, td_errors)
+        self.memory.batch_update(choose_idx, td_errors.detach())
 
-    def learn_c_a(self, embedding_layer):
-        # sample
-        choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
+        return critic_loss
 
-        b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
-        b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.action_nums]
-        b_discrete_a = torch.unsqueeze(batch_memory[:, self.field_nums + self.action_nums], 1).long()
-        b_r = torch.unsqueeze(batch_memory[:, -1], 1)
-        b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
-
+    def learn_c_a(self, b_s, b_c_a, ISweights):
         c_action, c_log_probs = self.C_Actor.sample(b_s)
-        d_action, d_action_probs, d_log_probs = self.D_Actor.sample(b_s)
 
         c_q1, d_q1, c_q2, d_q2 = self.Critic.forward(b_s, b_c_a)
         # c_actor's loss
@@ -390,15 +385,10 @@ class Hybrid_RL_Model():
 
         c_entropies = c_log_probs
 
-    def learn_o(self, embedding_layer):
-        # sample
-        choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
+        return c_entropies, d_q1, d_q2
 
-        b_s = embedding_layer.forward(batch_memory[:, :self.field_nums].long())
-        b_c_a = batch_memory[:, self.field_nums: self.field_nums + self.action_nums]
-        b_discrete_a = torch.unsqueeze(batch_memory[:, self.field_nums + self.action_nums], 1).long()
-        b_r = torch.unsqueeze(batch_memory[:, -1], 1)
-        b_s_ = b_s  # embedding_layer.forward(batch_memory_states)
+    def learn_d_a(self, b_s, d_q1, d_q2, ISweights):
+        d_action, d_action_probs, d_log_probs = self.D_Actor.sample(b_s)
 
         # d_actor's loss
         d_actor_loss = (ISweights * (d_action_probs * (self.d_alpha * d_log_probs - torch.min(d_q1, d_q2)))).mean()
@@ -409,17 +399,19 @@ class Hybrid_RL_Model():
 
         d_entropies = torch.sum(d_action_probs * d_log_probs, dim=-1)
 
+        return d_entropies
+
+    def learn_c_alpha(self, c_entropies):
         # c_actor's entropy tuning loss
         c_aplha_loss = -(self.c_log_alpha * (c_entropies + self.c_target_entropy).detach()).mean()
         self.optimizer_c_alpha.zero_grad()
         c_aplha_loss.backward()
         self.optimizer_c_alpha.step()
 
+    def learn_d_alpha(self, d_entropies):
         # d_actor's entropy tuning loss
         d_alpha_loss = -(self.d_log_alpha * (d_entropies + self.d_target_entropy).detach()).mean()
         self.optimizer_d_alpha.zero_grad()
         d_alpha_loss.backward()
         self.optimizer_d_alpha.step()
-
-        return critic_loss
 
