@@ -297,12 +297,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if (i + 1) >= 50000:
+            if (i + 1) >= 10:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
-                if (i + 1) % 5000 == 0:
-                    global_steps += batch_size * 5000
+                if (i + 1) % 10 == 0:
+                    global_steps += batch_size * 10
                     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                          device)
                     print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
@@ -369,7 +369,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 

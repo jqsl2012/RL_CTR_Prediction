@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+import copy
 from torch.distributions import MultivariateNormal, Categorical
 import datetime
 from torch.distributions import Normal, Categorical, MultivariateNormal
@@ -291,8 +292,8 @@ class Hybrid_TD3_Model():
         self.Hybrid_Actor = hybrid_actors(self.input_dims, self.c_action_nums).to(self.device)
         self.Critic = Critic(self.input_dims, self.c_action_nums, self.d_action_nums).to(self.device)
 
-        self.Hybrid_Actor_ = hybrid_actors(self.input_dims, self.c_action_nums).to(self.device)
-        self.Critic_ = Critic(self.input_dims, self.c_action_nums,  self.d_action_nums).to(self.device)
+        self.Hybrid_Actor_ = copy.deepcopy(self.Hybrid_Actor)
+        self.Critic_ = copy.deepcopy(self.Critic)
 
         # 优化器
         self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A)
