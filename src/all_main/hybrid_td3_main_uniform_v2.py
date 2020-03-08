@@ -115,14 +115,14 @@ def generate_preds(model_dict, features, actions, prob_weights,
             current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_with_clk_indexs] * 1,
-            current_basic_rewards[current_with_clk_indexs] * -1
+            current_basic_rewards[current_with_clk_indexs] * 0
         )
 
         without_clk_rewards = torch.where(
             current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_without_clk_indexs] * 1,
-            current_basic_rewards[current_without_clk_indexs] * -1
+            current_basic_rewards[current_without_clk_indexs] * 0
         )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -200,8 +200,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                    num_workers=8, shuffle=1)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size * 16, num_workers=8)
+                                                    num_workers=8)  # 0.7153541503790021
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 32, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
     FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
@@ -275,6 +275,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     rewards_records = []
     timesteps = []
     train_critics = []
+    global_steps = 0
     for epoch_i in range(epoch):
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
@@ -296,16 +297,17 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if i >= 100:
+            if i >= 50000:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
-                if i % 10 == 0:
+                if i % 5000 == 0:
+                    global_steps += batch_size * 5000
                     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
                                                                               test_data_loader,
                                                                               device)
-                    print('timesteps', (i + 1) * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+                    print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
                     rewards_records.append(test_rewards)
-                    timesteps.append((i + 1) * batch_size)
+                    timesteps.append(global_steps)
                     valid_aucs.append(auc)
 
         train_end_time = datetime.datetime.now()
@@ -357,7 +359,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_Uniform_V2', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
@@ -369,7 +371,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 

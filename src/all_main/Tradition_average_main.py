@@ -257,7 +257,7 @@ def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
-    parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, creti o, yoyi')
+    parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3358, 3386, 3427, 3476')
     parser.add_argument('--model_name', default='Tradition_avg', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
     parser.add_argument('--latent_dims', default=10)

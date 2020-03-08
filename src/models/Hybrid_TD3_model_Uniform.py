@@ -286,7 +286,7 @@ class Hybrid_TD3_Model():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
 
             next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
-            next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(torch.randn_like(d_actions_q_values_next), -0.5, 0.5), -1, 1)
+            next_d_actions = torch.clamp(d_actions_q_values_next + torch.clamp(torch.randn_like(d_actions_q_values_next) * 0.2, -0.5, 0.5), -1, 1)
 
             q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
             q_target = torch.min(q1_target, q2_target)
