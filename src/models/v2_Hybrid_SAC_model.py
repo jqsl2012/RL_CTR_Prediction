@@ -234,8 +234,8 @@ class D_Q_network(nn.Module):
         # Q1
         self.bn_input = nn.BatchNorm1d(self.input_dims)
         hidden_dims = [256, 256]
-        # self.mlp_l1 = nn.Linear(self.input_dims, hidden_dims[0])
-        # self.mlp_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
+        # self.mlp_q1_l1 = nn.Linear(self.input_dims, hidden_dims[0])
+        # self.mlp_q1_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
         self.mlp_1 = nn.Sequential(
             nn.Linear(self.input_dims, hidden_dims[0]),
             nn.BatchNorm1d(hidden_dims[0]),
@@ -245,7 +245,10 @@ class D_Q_network(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dims[1], self.action_dims)
         )
+        # self.dq1 = nn.Linear(hidden_dims[1], self.action_dims)
 
+        # self.mlp_q2_l1 = nn.Linear(self.input_dims, hidden_dims[0])
+        # self.mlp_q2_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
         self.mlp_2 = nn.Sequential(
             nn.Linear(self.input_dims, hidden_dims[0]),
             nn.BatchNorm1d(hidden_dims[0]),
@@ -255,17 +258,20 @@ class D_Q_network(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dims[1], self.action_dims)
         )
+        # self.dq2 = nn.Linear(hidden_dims[1], self.action_dims)
 
     def forward(self, state):
         bn_state = self.bn_input(state)
         # x1 = F.relu(self.mlp_q1_l1(state))
         # x1 = F.relu(self.mlp_q1_l2(x1))
         d_q1 = self.mlp_1(bn_state)
+        # d_q1 = self.dq1(x1)
 
         # x2 = F.relu(self.mlp_q2_l1(state))
         # x2 = F.relu(self.mlp_q2_l2(x2))
 
         d_q2 = self.mlp_2(bn_state)
+        # d_q2 = self.dq2(x2)
 
         return d_q1, d_q2
 
@@ -278,8 +284,8 @@ class C_Q_network(nn.Module):
         # Q1
         self.bn_input = nn.BatchNorm1d(self.input_dims)
         hidden_dims = [256, 256]
-        # self.mlp_l1 = nn.Linear(self.input_dims, hidden_dims[0])
-        # self.mlp_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
+        # self.mlp_q1_l1 = nn.Linear(self.input_dims + self.action_dims, hidden_dims[0])
+        # self.mlp_q1_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
         self.mlp_1 = nn.Sequential(
             nn.Linear(self.input_dims + self.action_dims, hidden_dims[0]),
             nn.BatchNorm1d(hidden_dims[0]),
@@ -289,9 +295,12 @@ class C_Q_network(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dims[1], 1)
         )
+        # self.cq1 = nn.Linear(hidden_dims[1], 1)
 
+        # self.mlp_q2_l1 = nn.Linear(self.input_dims + self.action_dims, hidden_dims[0])
+        # self.mlp_q2_l2 = nn.Linear(hidden_dims[0], hidden_dims[1])
         self.mlp_2 = nn.Sequential(
-            nn.Linear(self.input_dim + self.action_dims, hidden_dims[0]),
+            nn.Linear(self.input_dims + self.action_dims, hidden_dims[0]),
             nn.BatchNorm1d(hidden_dims[0]),
             nn.ReLU(),
             nn.Linear(hidden_dims[0], hidden_dims[1]),
@@ -299,18 +308,20 @@ class C_Q_network(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dims[1], 1)
         )
+        # self.cq2 = nn.Linear(hidden_dims[1], 1)
 
     def forward(self, state, action):
 
         bn_state = torch.cat([self.bn_input(state), action], dim=1)
-        # x1 = F.relu(self.mlp_q1_l1(state))
+        # x1 = F.relu(self.mlp_q1_l1(torch.cat([state, action], dim=1)))
         # x1 = F.relu(self.mlp_q1_l2(x1))
         c_q1 = self.mlp_1(bn_state)
+        # c_q1 =self.cq1(x1)
 
-        # x2 = F.relu(self.mlp_q2_l1(state))
+        # x2 = F.relu(self.mlp_q2_l1(torch.cat([state, action], dim=1)))
         # x2 = F.relu(self.mlp_q2_l2(x2))
-
         c_q2 = self.mlp_2(bn_state)
+        # c_q2 = self.cq2(x2)
 
         return c_q1, c_q2
 
@@ -362,23 +373,26 @@ class Hybrid_RL_Model():
         self.C_Actor = C_Actor(self.input_dims, self.action_nums).to(self.device)
 
         # 优化器
-        self.optimizer_c_a = torch.optim.Adam(self.C_Actor.parameters(), lr=self.lr_C_A, eps=1e-8)
-        self.optimizer_d_a = torch.optim.Adam(self.D_Actor.parameters(), lr=self.lr_D_A, eps=1e-8)
+        self.optimizer_c_a = torch.optim.Adam(self.C_Actor.parameters(), lr=self.lr_C_A, eps=1e-8, weight_decay=1e-3)
+        self.optimizer_d_a = torch.optim.Adam(self.D_Actor.parameters(), lr=self.lr_D_A, eps=1e-8, weight_decay=1e-3)
         self.optimizer_d_c = torch.optim.Adam(self.D_Critic.parameters(), lr=self.lr_C, eps=1e-8)
         self.optimizer_c_c = torch.optim.Adam(self.C_Critic.parameters(), lr=self.lr_C, eps=1e-8)
 
         # automatic entropy tuning
-        # Target entropy is -log(1/|A|) * ratio (= maximum entropy * ratio)
-        target_entropy_ratio = 0.98
-        self.c_target_entropy = -np.log(1.0/self.action_nums) * target_entropy_ratio
+
+        self.c_target_entropy = -torch.prod(torch.Tensor([self.action_nums, 1]).to(self.device)).item()
         self.c_log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
         self.c_alpha = self.c_log_alpha.exp()
         self.optimizer_c_alpha = torch.optim.Adam([self.c_log_alpha], lr=lr_C, eps=1e-8)
 
+        # Target entropy is -log(1/|A|) * ratio (= maximum entropy * ratio)
+        target_entropy_ratio = 0.98
         self.d_target_entropy = -np.log(1.0 / self.action_nums) * target_entropy_ratio
         self.d_log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
         self.d_alpha = self.d_log_alpha.exp()
-        self.optimizer_d_alpha = torch.optim.Adam([self.d_log_alpha], lr=lr_C)
+        self.optimizer_d_alpha = torch.optim.Adam([self.d_log_alpha], lr=lr_C, eps=1e-8)
+
+        self.learn_iter = 0
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         self.memory.add(transitions)
@@ -404,6 +418,9 @@ class Hybrid_RL_Model():
     def soft_update(self, net, net_target):
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
+
+    def hard_update(self, net, net_target):
+        net_target.load_state_dict(net.state_dict())
 
     def learn(self, embedding_layer):
         # sample
@@ -449,7 +466,7 @@ class Hybrid_RL_Model():
         d_critic_loss.backward()
         self.optimizer_d_c.step()
 
-        td_errors = ((2 * q_c_next_target - c_q1 - c_q2) / 2 + 1e-6) + ((2 * q_d_next_target - d_q1.gather(1, b_discrete_a) - d_q2.gather(1, b_discrete_a)) / 2 + 1e-6)
+        td_errors = (((2 * q_c_next_target - c_q1 - c_q2) / 2) + ((2 * q_d_next_target - d_q1.gather(1, b_discrete_a) - d_q2.gather(1, b_discrete_a)) / 2)) / 2
         self.memory.batch_update(choose_idx, td_errors.detach())
 
         c_action, c_log_probs = self.C_Actor.sample(b_s)
@@ -493,7 +510,11 @@ class Hybrid_RL_Model():
 
         self.d_alpha = self.d_log_alpha.exp()
 
-        self.soft_update(self.Critic, self.Critic_)
+        self.learn_iter += 1
+
+        if self.learn_iter % 100 == 0:
+            self.hard_update(self.D_Critic, self.D_Critic_)
+            self.hard_update(self.C_Critic, self.C_Critic_)
 
         return c_critic_loss.item(), d_critic_loss.item()
 

@@ -297,8 +297,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
             rl_model.store_transition(transitions)
 
             if (i + 1) >= 10:
-                for i in range(10):
-                    critic_loss = rl_model.learn(embedding_layer)
+                critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
                 if (i + 1) % 10 == 0:
