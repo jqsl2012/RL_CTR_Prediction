@@ -120,7 +120,7 @@ class Critic(nn.Module):
 
         deep_input_dims = self.input_dims + self.c_action_nums + self.d_action_nums
 
-        neuron_nums = [400, 300, 200]
+        neuron_nums = [256, 256, 256]
         # self.q_1_l1 = nn.Linear(deep_input_dims, neuron_nums[0])
         # self.q_1_l2 = nn.Linear(neuron_nums[0], neuron_nums[1])
         # self.q_1_l3 = nn.Linear(neuron_nums[1], neuron_nums[2])
@@ -138,10 +138,10 @@ class Critic(nn.Module):
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], 1)
+            # nn.Linear(neuron_nums[1], neuron_nums[2]),
+            # nn.BatchNorm1d(neuron_nums[2]),
+            # nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
         )
 
         # self.mlp_1[9].weight.data.uniform_(-3e-3, 3e-3)
@@ -154,10 +154,10 @@ class Critic(nn.Module):
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], 1)
+            # nn.Linear(neuron_nums[1], neuron_nums[2]),
+            # nn.BatchNorm1d(neuron_nums[2]),
+            # nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
         )
 
         # self.mlp_2[9].weight.data.uniform_(-3e-3, 3e-3)
@@ -192,7 +192,7 @@ class hybrid_actors(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        neuron_nums = [400, 300, 200]
+        neuron_nums = [256, 256, 256]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -200,17 +200,17 @@ class hybrid_actors(nn.Module):
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU()
+            # nn.Linear(neuron_nums[1], neuron_nums[2]),
+            # nn.BatchNorm1d(neuron_nums[2]),
+            # nn.ReLU()
         )# 特征提取层
 
-        self.c_action_layer = nn.Linear(neuron_nums[2], self.c_action_dims)
+        self.c_action_layer = nn.Linear(neuron_nums[1], self.c_action_dims)
 
         # self.c_action_layer[0].weight.data.uniform_(-3e-3, 3e-3)
         # self.c_action_layer[0].bias.data.uniform_(-3e-3, 3e-3)
 
-        self.d_action_layer = nn.Linear(neuron_nums[2], self.d_action_dims)
+        self.d_action_layer = nn.Linear(neuron_nums[1], self.d_action_dims)
 
         # self.d_action_layer[0].weight.data.uniform_(-3e-3, 3e-3)
         # self.d_action_layer[0].bias.data.uniform_(-3e-3, 3e-3)
@@ -231,7 +231,8 @@ class hybrid_actors(nn.Module):
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
         d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=1.0)
-        ensemble_d_actions = torch.max(d_action) + 1
+        ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
+        # print(ensemble_d_actions)
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
 
@@ -246,7 +247,7 @@ class hybrid_actors(nn.Module):
         return c_actions_means, d_actions_q_values
 
 def gumbel_softmax_sample(logits, temperature, eps=1e-8):
-    U = Variable(torch.FloatTensor(*logits.shape), requires_grad=False)
+    U = Variable(torch.FloatTensor(*logits.shape).uniform_().cuda(), requires_grad=False)
     y = logits + -torch.log(-torch.log(U + eps) + eps)
 
     return F.softmax(y / temperature, dim=-1)
