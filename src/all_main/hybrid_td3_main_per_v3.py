@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v2_Hybrid_TD3_model_PER as td3_model
+import src.models.v3_Hybrid_TD3_model_PER as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -357,8 +357,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V2', help='LR, FM, FFM, W&D')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V3', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)

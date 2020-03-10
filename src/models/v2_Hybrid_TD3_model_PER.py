@@ -205,7 +205,10 @@ class hybrid_actors(nn.Module):
             # nn.ReLU()
         )# 特征提取层
 
-        self.c_action_layer = nn.Linear(neuron_nums[1], self.c_action_dims)
+        self.c_action_layer = nn.Sequential(
+            nn.Linear(neuron_nums[1], self.c_action_dims),
+            nn.Tanh()
+        )
 
         # self.c_action_layer[0].weight.data.uniform_(-3e-3, 3e-3)
         # self.c_action_layer[0].bias.data.uniform_(-3e-3, 3e-3)
@@ -226,11 +229,11 @@ class hybrid_actors(nn.Module):
         c_action_means = self.c_action_layer(mlp_out)
         d_action_q_values = self.d_action_layer(mlp_out)
 
-        c_actions = torch.clamp(c_action_means + torch.randn_like(c_action_means) * 0.1, -1, 1)  # 用于返回训练
+        c_actions = torch.clamp(c_action_means + torch.randn_like(c_action_means), -1, 1)  # 用于返回训练
 
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
-        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=1.0, hard=True)
+        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=1.0, hard=False)
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
         # print(ensemble_d_actions)
 
@@ -242,11 +245,11 @@ class hybrid_actors(nn.Module):
         mlp_out = self.mlp(obs)
 
         c_actions_means = self.c_action_layer(mlp_out)
-        d_actions_q_values = onehot_from_logits(self.d_action_layer(mlp_out))
+        d_actions_q_values = self.d_action_layer(mlp_out)
 
         return c_actions_means, d_actions_q_values
 
-def gumbel_softmax_sample(logits, temperature, hard=False, eps=1e-8):
+def gumbel_softmax_sample(logits, temperature=1.0, hard=False, eps=1e-8):
     U = Variable(torch.FloatTensor(*logits.shape).uniform_().cuda(), requires_grad=False)
     y = logits + -torch.log(-torch.log(U + eps) + eps)
     y = F.softmax(y / temperature, dim=-1)
@@ -326,7 +329,7 @@ class Hybrid_TD3_Model():
         self.action_std = torch.ones(size=[1, self.c_action_nums]).to(self.device)
 
         self.learn_iter = 0
-        self.policy_freq = 4
+        self.policy_freq = 1
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         td_errors = torch.ones(size=[len(transitions), 1]).to(self.device)
@@ -372,16 +375,17 @@ class Hybrid_TD3_Model():
         with torch.no_grad():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
 
-            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
-            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temperature=1.0, hard=True)
+            # next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
+            # next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temperature=1.0, hard=True)
+            next_d_actions = onehot_from_logits(d_actions_q_values_next)
 
-            q1_target, q2_target = self.Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
+            q1_target, q2_target = self.Critic_.evaluate(b_s_, c_actions_means_next, next_d_actions)
             q_target = torch.min(q1_target, q2_target)
             q_target = b_r + self.gamma * q_target
 
         q1, q2 = self.Critic.evaluate(b_s, b_c_a, b_d_a)
 
-        critic_td_error = (2 * q_target - q1 - q2).detach()
+        critic_td_error = (2 * q_target - q1 - q2).detach() / 2
         # critic_loss = F.mse_loss(q1, q_target) + F.mse_loss(q2, q_target)
         # critic_loss = (ISweights * (torch.pow(q1 - q_target, 2) + torch.pow(q2 - q_target, 2))).mean()
         critic_loss = (ISweights * (F.mse_loss(q1, q_target, reduction='none') + F.mse_loss(q2, q_target, reduction='none'))).mean()
@@ -399,7 +403,7 @@ class Hybrid_TD3_Model():
             c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
             # Hybrid_Actor
             # c a
-            c_a_loss = -self.Critic.evaluate_q_1(b_s, c_actions_means, onehot_from_logits(d_actions_q_values)).mean()
+            c_a_loss = -(ISweights * self.Critic.evaluate_q_1(b_s, c_actions_means, gumbel_softmax_sample(d_actions_q_values, hard=True))).mean()
 
             # actor_loss = c_a_loss - c_actions_entropy.mean() - d_actions_entropy.mean()
             actor_loss = c_a_loss
