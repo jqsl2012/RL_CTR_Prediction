@@ -16,10 +16,6 @@ def setup_seed(seed):
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
 
-
-# 设置随机数种子
-setup_seed(1)
-
 class Memory(object):
     def __init__(self, memory_size, transition_lens, device):
         self.device = device
@@ -305,12 +301,12 @@ class D_actor(nn.Module):
 
         self.out_fn = lambda x: x
 
-    def act(self, input):
+    def act(self, input, temprature):
         obs = self.bn_input(input)
         # obs = input
         d_action_q_values = self.mlp(obs)
 
-        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=1.0, hard=False)
+        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=temprature, hard=False)
 
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
 
@@ -384,6 +380,8 @@ class Hybrid_TD3_Model():
 
         self.memory_counter = 0
 
+        setup_seed(1)
+
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
         self.memory = Memory(self.memory_size, self.field_nums + self.c_action_nums + self.d_action_nums + 2, self.device)
@@ -412,6 +410,8 @@ class Hybrid_TD3_Model():
         self.learn_iter = 0
         self.policy_freq = 1
 
+        self.temprature = 1.0
+
     def store_transition(self, transitions): # 所有的值都应该弄成float
         td_errors = torch.ones(size=[len(transitions), 1]).to(self.device)
 
@@ -419,8 +419,9 @@ class Hybrid_TD3_Model():
 
     def choose_action(self, state):
         with torch.no_grad():
+            self.temprature = max(self.temprature, 0.01)
             c_actions, ensemble_c_actions = self.C_Actor.act(state)
-            d_q_values, ensemble_d_actions = self.D_Actor.act(state)
+            d_q_values, ensemble_d_actions = self.D_Actor.act(state, self.temprature)
 
         return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions
 
@@ -488,8 +489,9 @@ class Hybrid_TD3_Model():
         self.memory.batch_update(choose_idx, critic_td_error)
 
         if self.learn_iter % self.policy_freq == 0:
+            self.temprature = max(self.temprature, 0.01)
             c_actions_means = self.C_Actor.evaluate(b_s)
-            d_actions_q_values = gumbel_softmax_sample(self.D_Actor.evaluate(b_s), hard=True)
+            d_actions_q_values = gumbel_softmax_sample(self.D_Actor.evaluate(b_s), hard=True, temperature=self.temprature)
 
             # Hybrid_Actor
             # c a
@@ -508,6 +510,8 @@ class Hybrid_TD3_Model():
             self.soft_update(self.D_Critic, self.D_Critic_)
             self.soft_update(self.C_Actor, self.C_Actor_)
             self.soft_update(self.D_Actor, self.D_Actor_)
+
+            self.temprature -= 5e-4
 
         return critic_loss_r
 
