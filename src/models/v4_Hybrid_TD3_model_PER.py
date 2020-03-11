@@ -122,7 +122,8 @@ class Hybrid_Critic(nn.Module):
             nn.BatchNorm1d(neuron_nums[0]),
             nn.ReLU(),
             nn.Linear(neuron_nums[0], neuron_nums[1]),
-            nn.BatchNorm1d(neuron_nums[1])
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU()
         )
 
         self.mlp_2 = nn.Sequential(
@@ -130,7 +131,8 @@ class Hybrid_Critic(nn.Module):
             nn.BatchNorm1d(neuron_nums[0]),
             nn.ReLU(),
             nn.Linear(neuron_nums[0], neuron_nums[1]),
-            nn.BatchNorm1d(neuron_nums[1])
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU()
         )
 
         self.c_critic_layer = nn.Linear(neuron_nums[1] + self.action_nums, 1)
