@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v4_Hybrid_TD3_model_PER as td3_model
+import src.models.v5_Hybrid_TD3_model_PER as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -114,15 +114,15 @@ def generate_preds(model_dict, features, actions, prob_weights,
         with_clk_rewards = torch.where(
             current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
-            current_basic_rewards[current_with_clk_indexs] * 1,
-            current_basic_rewards[current_with_clk_indexs] * -1
+            current_basic_rewards[current_with_clk_indexs] * 10,
+            current_basic_rewards[current_with_clk_indexs] * 0
         )
 
         without_clk_rewards = torch.where(
             current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_without_clk_indexs] * 1,
-            current_basic_rewards[current_without_clk_indexs] * -1
+            current_basic_rewards[current_without_clk_indexs] * 0
         )
 
         current_basic_rewards[current_with_clk_indexs] = with_clk_rewards
@@ -201,17 +201,17 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
                                                     num_workers=8, shuffle=1)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 64, num_workers=8)
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000000, num_workers=8)
 
-    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretrain_params)
-    FFM.eval()
-
-    LR = p_model.LR(feature_nums)
-    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
-    LR.load_state_dict(LR_pretrain_params)
-    LR.eval()
+    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    # FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    # FFM.load_state_dict(FFM_pretrain_params)
+    # FFM.eval()
+    #
+    # LR = p_model.LR(feature_nums)
+    # LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    # LR.load_state_dict(LR_pretrain_params)
+    # LR.eval()
 
     FM = p_model.FM(feature_nums, latent_dims)
     FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
@@ -297,12 +297,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if (i + 1) >= 500:
+            if (i + 1) >= 5000:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
-                if (i + 1) % 50 == 0:
-                    global_steps += batch_size * 50
+                if (i + 1) % 500 == 0:
+                    global_steps += batch_size * 500
                     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                          device)
                     print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
@@ -363,13 +363,13 @@ if __name__ == '__main__':
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=3e-3)
+    parser.add_argument('--init_lr_c', type=float, default=3e-4)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=1)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=100)
+    parser.add_argument('--batch_size', type=int, default=10)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
