@@ -112,9 +112,9 @@ def hidden_init(layer):
     lim = 1. / np.sqrt(fan_in)
     return (-lim, lim)
 
-class Hybrid_Critic(nn.Module):
+class C_Critic(nn.Module):
     def __init__(self, input_dims, action_nums):
-        super(Hybrid_Critic, self).__init__()
+        super(C_Critic, self).__init__()
         self.input_dims = input_dims
         self.action_nums = action_nums
 
@@ -122,7 +122,7 @@ class Hybrid_Critic(nn.Module):
         # self.bn_input.weight.data.fill_(1)
         # self.bn_input.bias.data.fill_(0)
 
-        deep_input_dims = self.input_dims
+        deep_input_dims = self.input_dims + self.action_nums
 
         neuron_nums = [512, 256]
 
@@ -132,7 +132,8 @@ class Hybrid_Critic(nn.Module):
             nn.ReLU(),
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
         )
 
         self.mlp_2 = nn.Sequential(
@@ -141,16 +142,14 @@ class Hybrid_Critic(nn.Module):
             nn.ReLU(),
             nn.Linear(neuron_nums[0], neuron_nums[1]),
             nn.BatchNorm1d(neuron_nums[1]),
-            nn.ReLU()
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
         )
-
-        self.c_critic_layer = nn.Linear(neuron_nums[1] + self.action_nums, 1)
-        self.d_critic_layer = nn.Linear(neuron_nums[1] + self.action_nums, 1)
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        for i in range(2):
+        for i in range(6):
             if i % 3 == 0:
                 self.mlp_1[i].weight.data.uniform_(*hidden_init(self.mlp_1[i]))
                 self.mlp_2[i].weight.data.uniform_(*hidden_init(self.mlp_2[i]))
@@ -161,33 +160,90 @@ class Hybrid_Critic(nn.Module):
             #     self.mlp_2[i].weight.data.fill_(1)
             #     self.mlp_2[i].bias.data.fill_(0)
 
-        self.c_critic_layer.weight.data.uniform_(-0.003, 0.003)
-        self.d_critic_layer.weight.data.uniform_(-0.003, 0.003)
+        self.mlp_1[6].weight.data.uniform_(-0.003, 0.003)
+        self.mlp_2[6].weight.data.uniform_(-0.003, 0.003)
 
-    def evaluate(self, input, c_actions, d_actions):
+    def evaluate(self, input, c_actions):
         obs = self.bn_input(input)
 
-        feature_exact_1 = self.mlp_1(obs)
-        feature_exact_2 = self.mlp_2(obs)
+        c_q_out_1 = self.mlp_1(torch.cat([obs, c_actions], dim=-1))
+        c_q_out_2 = self.mlp_2(torch.cat([obs, c_actions], dim=-1))
 
-        c_q_out_1 = self.c_critic_layer(torch.cat([feature_exact_1, c_actions], dim=-1))
-        c_q_out_2 = self.c_critic_layer(torch.cat([feature_exact_2, c_actions], dim=-1))
+        return c_q_out_1, c_q_out_2
 
-        d_q_out_1 = self.d_critic_layer(torch.cat([feature_exact_1, d_actions], dim=-1))
-        d_q_out_2 = self.d_critic_layer(torch.cat([feature_exact_2, d_actions], dim=-1))
-
-        return c_q_out_1, c_q_out_2, d_q_out_1, d_q_out_2
-
-    def evaluate_q_1(self, input, c_actions, d_actions):
+    def evaluate_q_1(self, input, c_actions):
         obs = self.bn_input(input)
 
-        feature_exact_1 = self.mlp_1(obs)
 
-        c_q_out_1 = self.c_critic_layer(torch.cat([feature_exact_1, c_actions], dim=-1))
+        c_q_out_1 = self.mlp_1(torch.cat([obs, c_actions], dim=-1))
 
-        d_q_out_1 = self.d_critic_layer(torch.cat([feature_exact_1, d_actions], dim=-1))
 
-        return c_q_out_1, d_q_out_1
+        return c_q_out_1
+
+class D_Critic(nn.Module):
+    def __init__(self, input_dims, action_nums):
+        super(D_Critic, self).__init__()
+        self.input_dims = input_dims
+        self.action_nums = action_nums
+
+        self.bn_input = nn.BatchNorm1d(self.input_dims)
+        # self.bn_input.weight.data.fill_(1)
+        # self.bn_input.bias.data.fill_(0)
+
+        deep_input_dims = self.input_dims + self.action_nums
+
+        neuron_nums = [512, 256]
+
+        self.mlp_1 = nn.Sequential(
+            nn.Linear(deep_input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
+        )
+
+        self.mlp_2 = nn.Sequential(
+            nn.Linear(deep_input_dims, neuron_nums[0]),
+            nn.BatchNorm1d(neuron_nums[0]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[0], neuron_nums[1]),
+            nn.BatchNorm1d(neuron_nums[1]),
+            nn.ReLU(),
+            nn.Linear(neuron_nums[1], 1)
+        )
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for i in range(6):
+            if i % 3 == 0:
+                self.mlp_1[i].weight.data.uniform_(*hidden_init(self.mlp_1[i]))
+                self.mlp_2[i].weight.data.uniform_(*hidden_init(self.mlp_2[i]))
+
+            # if (i - 1) % 3 == 0:
+            #     self.mlp_1[i].weight.data.fill_(1)
+            #     self.mlp_1[i].bias.data.fill_(0)
+            #     self.mlp_2[i].weight.data.fill_(1)
+            #     self.mlp_2[i].bias.data.fill_(0)
+
+        self.mlp_1[6].weight.data.uniform_(-0.003, 0.003)
+        self.mlp_2[6].weight.data.uniform_(-0.003, 0.003)
+
+    def evaluate(self, input, d_actions):
+        obs = self.bn_input(input)
+
+        d_q_out_1 = self.mlp_1(torch.cat([obs, d_actions], dim=-1))
+        d_q_out_2 = self.mlp_2(torch.cat([obs, d_actions], dim=-1))
+
+        return d_q_out_1, d_q_out_2
+
+    def evaluate_q_1(self, input, d_actions):
+        obs = self.bn_input(input)
+        d_q_out_1 = self.mlp_1(torch.cat([obs, d_actions], dim=-1))
+
+        return d_q_out_1
 
 class Hybrid_Actor(nn.Module):
     def __init__(self, input_dims, action_nums):
@@ -322,14 +378,17 @@ class Hybrid_TD3_Model():
         self.memory = Memory(self.memory_size, self.field_nums + self.action_nums * 2 + 2, self.device)
 
         self.Hybrid_Actor = Hybrid_Actor(self.input_dims, self.action_nums).to(self.device)
-        self.Hybrid_Critic = Hybrid_Critic(self.input_dims, self.action_nums).to(self.device)
+        self.C_Critic = C_Critic(self.input_dims, self.action_nums).to(self.device)
+        self.D_Critic = D_Critic(self.input_dims, self.action_nums).to(self.device)
 
         self.Hybrid_Actor_ = copy.deepcopy(self.Hybrid_Actor)
-        self.Hybrid_Critic_ = copy.deepcopy(self.Hybrid_Critic)
+        self.C_Critic_ = copy.deepcopy(self.C_Critic)
+        self.D_Critic_ = copy.deepcopy(self.D_Critic)
 
         # 优化器
         self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A)
-        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer_c_c = torch.optim.Adam(self.C_Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
+        self.optimizer_d_c = torch.optim.Adam(self.D_Critic.parameters(), lr=self.lr_C, weight_decay=1e-5)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
@@ -386,26 +445,32 @@ class Hybrid_TD3_Model():
             # next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
             # next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temperature=1.0, hard=True)
 
-            c_q1_target, c_q2_target, d_q1_target, d_q2_target = \
-                self.Hybrid_Critic_.evaluate(b_s_, c_actions_means_next, onehot_from_logits(d_actions_q_values_next))
+            c_q1_target, c_q2_target = \
+                self.C_Critic_.evaluate(b_s_, c_actions_means_next)
+            d_q1_target, d_q2_target = self.D_Critic_.evaluate(b_s_, onehot_from_logits(d_actions_q_values_next))
             c_q_target = torch.min(c_q1_target, c_q2_target)
             c_q_target = b_r + self.gamma * c_q_target
 
             d_q_target = torch.min(d_q1_target, d_q2_target)
             d_q_target = b_r + self.gamma * d_q_target
 
-        c_q1, c_q2, d_q1, d_q2 = self.Hybrid_Critic.evaluate(b_s, b_c_a, b_d_a)
+        c_q1, c_q2 = self.C_Critic.evaluate(b_s, b_d_a)
+        d_q1, d_q2 = self.D_Critic(b_s, b_d_a)
 
         critic_td_error = (2 * c_q_target + 2 * d_q_target - c_q1 - c_q2 - d_q1 - d_q2).detach() / 4
 
         c_critic_loss = (ISweights * (F.mse_loss(c_q1, c_q_target, reduction='none') + F.mse_loss(c_q2, c_q_target, reduction='none'))).mean()
         d_critic_loss = (ISweights * (F.mse_loss(d_q1, d_q_target, reduction='none') + F.mse_loss(d_q2, d_q_target, reduction='none'))).mean()
 
-        critic_loss = c_critic_loss + d_critic_loss
-        self.optimizer_c.zero_grad()
-        critic_loss.backward()
-        nn.utils.clip_grad_norm_(self.Hybrid_Critic.parameters(), 0.5)
-        self.optimizer_c.step()
+        self.optimizer_c_c.zero_grad()
+        c_critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.C_Critic.parameters(), 0.5)
+        self.optimizer_c_c.step()
+
+        self.optimizer_d_c.zero_grad()
+        d_critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.D_Critic.parameters(), 0.5)
+        self.optimizer_d_c.step()
 
         critic_loss_r = c_critic_loss.item() + d_critic_loss.item()
 
@@ -418,7 +483,8 @@ class Hybrid_TD3_Model():
 
             # Hybrid_Actor
             # c a
-            c_a_critic_value, d_a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means, d_actions_q_values)
+            c_a_critic_value = self.C_Critic.evaluate_q_1(b_s, c_actions_means)
+            d_a_critic_value = self.D_Critic.evaluate_q_1(b_s, d_actions_q_values)
             a_loss = -(ISweights * (c_a_critic_value + d_a_critic_value)).mean()
 
             self.optimizer_a.zero_grad()
@@ -426,7 +492,8 @@ class Hybrid_TD3_Model():
             nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.5)
             self.optimizer_a.step()
 
-            self.soft_update(self.Hybrid_Critic, self.Hybrid_Critic_)
+            self.soft_update(self.C_Critic, self.C_Critic_)
+            self.soft_update(self.D_Critic, self.D_Critic_)
             self.soft_update(self.Hybrid_Actor, self.Hybrid_Actor_)
 
             # self.temprature -= 5e-4
