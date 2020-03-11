@@ -69,58 +69,58 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
 
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretrain_params)
-    FFM.eval()
-
-    LR = p_model.LR(feature_nums)
-    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
-    LR.load_state_dict(LR_pretrain_params)
-    LR.eval()
-
-    FM = p_model.FM(feature_nums, latent_dims)
-    FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
-    FM.load_state_dict(FM_pretrain_params)
-    FM.eval()
-
-    # AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
-    # AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
-    # AFM.load_state_dict(AFM_pretrain_params)
-    # AFM.eval()
+    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    # FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    # FFM.load_state_dict(FFM_pretrain_params)
+    # FFM.eval()
     #
-    # WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
-    # WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
-    # WandD.load_state_dict(WandD_pretrain_params)
-    # WandD.eval()
+    # LR = p_model.LR(feature_nums)
+    # LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    # LR.load_state_dict(LR_pretrain_params)
+    # LR.eval()
     #
+    # FM = p_model.FM(feature_nums, latent_dims)
+    # FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
+    # FM.load_state_dict(FM_pretrain_params)
+    # FM.eval()
+
+    AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
+    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    AFM.load_state_dict(AFM_pretrain_params)
+    AFM.eval()
+
+    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    WandD.load_state_dict(WandD_pretrain_params)
+    WandD.eval()
+
     # DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
     # DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
     # DeepFM.load_state_dict(DeepFM_pretrain_params)
     # DeepFM.eval()
-    #
-    # FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
-    # FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
-    # FNN.load_state_dict(FNN_pretrain_params)
-    # FNN.eval()
-    #
-    # IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
-    # IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
-    # IPNN.load_state_dict(IPNN_pretrain_params)
-    # IPNN.eval()
-    #
+
+    FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
+    FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
+    FNN.load_state_dict(FNN_pretrain_params)
+    FNN.eval()
+
+    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
+    IPNN.load_state_dict(IPNN_pretrain_params)
+    IPNN.eval()
+
     # OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
     # OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
     # OPNN.load_state_dict(OPNN_pretrain_params)
     # OPNN.eval()
-    #
-    # DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
-    # DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
-    # DCN.load_state_dict(DCN_pretrain_params)
-    # DCN.eval()
 
-    model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    # model_dict = {0: WandD.to(device), 1: DeepFM.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
+    DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
+    DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
+    DCN.load_state_dict(DCN_pretrain_params)
+    DCN.eval()
+
+    # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
 
     submission_path = data_path + dataset_name + campaign_id + 'average_pretrain' + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3427/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')

@@ -147,7 +147,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-            # print(actions, prob_weights)
+            print(actions, prob_weights)
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -218,43 +218,43 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     FM.load_state_dict(FM_pretrain_params)
     FM.eval()
 
-    # AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
-    # AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
-    # AFM.load_state_dict(AFM_pretrain_params)
-    # AFM.eval()
-    #
-    # WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
-    # WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
-    # WandD.load_state_dict(WandD_pretrain_params)
-    # WandD.eval()
-    #
+    AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
+    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    AFM.load_state_dict(AFM_pretrain_params)
+    AFM.eval()
+
+    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    WandD.load_state_dict(WandD_pretrain_params)
+    WandD.eval()
+
     # DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
     # DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
     # DeepFM.load_state_dict(DeepFM_pretrain_params)
     # DeepFM.eval()
-    #
-    # FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
-    # FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
-    # FNN.load_state_dict(FNN_pretrain_params)
-    # FNN.eval()
-    #
-    # IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
-    # IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
-    # IPNN.load_state_dict(IPNN_pretrain_params)
-    # IPNN.eval()
-    #
+
+    FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
+    FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
+    FNN.load_state_dict(FNN_pretrain_params)
+    FNN.eval()
+
+    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
+    IPNN.load_state_dict(IPNN_pretrain_params)
+    IPNN.eval()
+
     # OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
     # OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
     # OPNN.load_state_dict(OPNN_pretrain_params)
     # OPNN.eval()
-    #
-    # DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
-    # DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
-    # DCN.load_state_dict(DCN_pretrain_params)
-    # DCN.eval()
 
-    model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    # model_dict = {0: WandD.to(device), 1: DeepFM.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
+    DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
+    DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
+    DCN.load_state_dict(DCN_pretrain_params)
+    DCN.eval()
+
+    # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
 
     model_dict_len = len(model_dict)
 
@@ -357,8 +357,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V3', help='LR, FM, FFM, W&D')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V4', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)
@@ -369,7 +369,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 

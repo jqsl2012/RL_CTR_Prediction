@@ -105,6 +105,13 @@ class Memory(object):
         p = self.get_priority(td_errors)
         self.prioritys_[choose_idx, :] = p
 
+def hidden_init(layer):
+    # source: The other layers were initialized from uniform distributions
+    # [− 1/sqrt(f) , 1/sqrt(f) ] where f is the fan-in of the layer
+    fan_in = layer.weight.data.size()[0]
+    lim = 1. / np.sqrt(fan_in)
+    return (-lim, lim)
+
 class Hybrid_Critic(nn.Module):
     def __init__(self, input_dims, action_nums):
         super(Hybrid_Critic, self).__init__()
@@ -112,6 +119,8 @@ class Hybrid_Critic(nn.Module):
         self.action_nums = action_nums
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
+        # self.bn_input.weight.data.fill_(1)
+        # self.bn_input.bias.data.fill_(0)
 
         deep_input_dims = self.input_dims
 
@@ -137,6 +146,23 @@ class Hybrid_Critic(nn.Module):
 
         self.c_critic_layer = nn.Linear(neuron_nums[1] + self.action_nums, 1)
         self.d_critic_layer = nn.Linear(neuron_nums[1] + self.action_nums, 1)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for i in range(2):
+            if i % 3 == 0:
+                self.mlp_1[i].weight.data.uniform_(*hidden_init(self.mlp_1[i]))
+                self.mlp_2[i].weight.data.uniform_(*hidden_init(self.mlp_2[i]))
+
+            # if (i - 1) % 3 == 0:
+            #     self.mlp_1[i].weight.data.fill_(1)
+            #     self.mlp_1[i].bias.data.fill_(0)
+            #     self.mlp_2[i].weight.data.fill_(1)
+            #     self.mlp_2[i].bias.data.fill_(0)
+
+        self.c_critic_layer.weight.data.uniform_(-0.003, 0.003)
+        self.d_critic_layer.weight.data.uniform_(-0.003, 0.003)
 
     def evaluate(self, input, c_actions, d_actions):
         obs = self.bn_input(input)
@@ -170,6 +196,8 @@ class Hybrid_Actor(nn.Module):
         self.action_dims = action_nums
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
+        # self.bn_input.weight.data.fill_(1)
+        # self.bn_input.bias.data.fill_(0)
 
         neuron_nums = [512, 256]
         self.mlp = nn.Sequential(
@@ -187,6 +215,20 @@ class Hybrid_Actor(nn.Module):
         )
 
         self.d_action_layer = nn.Linear(neuron_nums[1], self.action_dims)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        for i in range(2):
+            if i % 3 == 0:
+                self.mlp[i].weight.data.uniform_(*hidden_init(self.mlp[i]))
+
+            # if (i - 1) % 3 == 0:
+            #     self.mlp[i].weight.data.fill_(1)
+            #     self.mlp[i].bias.data.fill_(0)
+
+        self.c_actor_layer[0].weight.data.uniform_(-0.003, 0.003)
+        self.d_action_layer.weight.data.uniform_(-0.003, 0.003)
 
     def act(self, input, temprature):
         obs = self.bn_input(input)
@@ -302,13 +344,16 @@ class Hybrid_TD3_Model():
         self.memory.add(td_errors, transitions)
 
     def choose_action(self, state):
+        self.Hybrid_Actor.eval()
         with torch.no_grad():
             self.temprature = max(self.temprature, 0.01)
             c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state, self.temprature)
+        self.Hybrid_Actor.train()
 
         return c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions
 
     def choose_best_action(self, state):
+        self.Hybrid_Actor.eval()
         with torch.no_grad():
             c_action_means, d_q_values = self.Hybrid_Actor.evaluate(state)
 
@@ -359,6 +404,7 @@ class Hybrid_TD3_Model():
         critic_loss = c_critic_loss + d_critic_loss
         self.optimizer_c.zero_grad()
         critic_loss.backward()
+        nn.utils.clip_grad_norm_(self.Hybrid_Critic.parameters(), 0.5)
         self.optimizer_c.step()
 
         critic_loss_r = c_critic_loss.item() + d_critic_loss.item()
@@ -377,12 +423,13 @@ class Hybrid_TD3_Model():
 
             self.optimizer_a.zero_grad()
             a_loss.backward()
+            nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.5)
             self.optimizer_a.step()
 
             self.soft_update(self.Hybrid_Critic, self.Hybrid_Critic_)
-            self.soft_update(self.Hybrid_Actor, self.HybridC_Actor_)
+            self.soft_update(self.Hybrid_Actor, self.Hybrid_Actor_)
 
-            self.temprature -= 5e-4
+            # self.temprature -= 5e-4
 
         return critic_loss_r
 
