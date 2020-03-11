@@ -123,9 +123,9 @@ class WideAndDeep(nn.Module):
         neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
+            # layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            # layers.append(nn.Dropout(p=0.2))
+            layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, 1))
@@ -163,9 +163,9 @@ class InnerPNN(nn.Module):
         neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
+            # layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            # layers.append(nn.Dropout(p=0.2))
+            layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, 1))
@@ -219,9 +219,9 @@ class OuterPNN(nn.Module):
         neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
+            # layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            # layers.append(nn.Dropout(p=0.2))
+            layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, 1))
@@ -279,9 +279,9 @@ class DeepFM(nn.Module):
         neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
+            # layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            # layers.append(nn.Dropout(p=0.5))
+            layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, 1))
@@ -342,9 +342,9 @@ class FNN(nn.Module):
         neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
-            layers.append(nn.BatchNorm1d(neuron_num))
+            # layers.append(nn.BatchNorm1d(neuron_num))
             layers.append(nn.ReLU())
-            # layers.append(nn.Dropout(p=0.2))
+            layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neuron_num
 
         layers.append(nn.Linear(deep_input_dims, 1))
@@ -395,9 +395,9 @@ class DCN(nn.Module):
 
         for neural_num in neural_nums:
             deep_net_layers.append(nn.Linear(deep_input_dims, neural_num))
-            deep_net_layers.append(nn.BatchNorm1d(neural_num))
+            # deep_net_layers.append(nn.BatchNorm1d(neural_num))
             deep_net_layers.append(nn.ReLU())
-            # deep_net_layers.append(nn.Dropout(p=0.2))
+            deep_net_layers.append(nn.Dropout(p=0.2))
             deep_input_dims = neural_num
 
         # for i, layer in enumerate(deep_net_layers):
@@ -477,9 +477,9 @@ class AFM(nn.Module):
         attn_scores = F.relu(self.attention_net(inner_product))
         attn_scores = F.softmax(self.attention_softmax(attn_scores), dim=1)
 
-        # attn_scores = F.dropout(attn_scores, p=0.2)
+        attn_scores = F.dropout(attn_scores, p=0.2)
         attn_output = torch.sum(torch.mul(attn_scores, inner_product), dim=1) # shape: batch_size-latent_dims
-        # attn_output = F.dropout(attn_output, p=0.2)
+        attn_output = F.dropout(attn_output, p=0.2)
 
         out = self.bias + torch.sum(self.linear(x), dim=1) + self.fc(attn_output)
 

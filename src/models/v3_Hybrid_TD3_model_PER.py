@@ -115,7 +115,7 @@ class C_Critic(nn.Module):
 
         deep_input_dims = self.input_dims + self.c_action_nums
 
-        neuron_nums = [512, 256, 256]
+        neuron_nums = [512, 256]
 
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
@@ -179,7 +179,7 @@ class D_Critic(nn.Module):
 
         deep_input_dims = self.input_dims + self.d_action_nums
 
-        neuron_nums = [512, 256, 256]
+        neuron_nums = [512, 256]
 
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
@@ -241,7 +241,7 @@ class C_actor(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        neuron_nums = [512, 256, 256]
+        neuron_nums = [512, 256]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
@@ -285,7 +285,7 @@ class D_actor(nn.Module):
 
         self.bn_input = nn.BatchNorm1d(self.input_dims)
 
-        neuron_nums = [512, 256, 256]
+        neuron_nums = [512, 256]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.BatchNorm1d(neuron_nums[0]),
