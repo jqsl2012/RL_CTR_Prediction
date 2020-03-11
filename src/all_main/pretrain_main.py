@@ -149,7 +149,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
 
         train_start_time = datetime.datetime.now()
 
-        learning_rate += 1e-4
+        # learning_rate += 1e-4
         optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
         train_average_loss = train(model, optimizer, train_data_loader, loss, device)
@@ -225,8 +225,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='FFM', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=100)
-    parser.add_argument('--learning_rate', type=float, default=1e-4)
-    parser.add_argument('--weight_decay', type=float, default=1e-5)
+    parser.add_argument('--learning_rate', type=float, default=3e-4)
+    parser.add_argument('--weight_decay', type=float, default=1e-2)
     parser.add_argument('--early_stop_type', default='loss', help='auc, loss')
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--device', default='cuda:0')

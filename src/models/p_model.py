@@ -120,7 +120,7 @@ class WideAndDeep(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -160,7 +160,7 @@ class InnerPNN(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims + self.field_nums * (self.field_nums - 1) // 2
         layers = list()
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -216,7 +216,7 @@ class OuterPNN(nn.Module):
         deep_input_dims = self.latent_dims + self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -276,7 +276,7 @@ class DeepFM(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [300, 300, 300 ]
+        neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -339,7 +339,7 @@ class FNN(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
         layers = list()
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [512, 256]
         for neuron_num in neuron_nums:
             layers.append(nn.Linear(deep_input_dims, neuron_num))
             layers.append(nn.BatchNorm1d(neuron_num))
@@ -390,7 +390,7 @@ class DCN(nn.Module):
         deep_input_dims = self.field_nums * self.latent_dims
 
         deep_net_layers = list()
-        neural_nums = [300, 300, 300]
+        neural_nums = [512, 256]
         self.num_neural_layers = 5
 
         for neural_num in neural_nums:
