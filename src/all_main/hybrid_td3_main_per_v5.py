@@ -114,7 +114,7 @@ def generate_preds(model_dict, features, actions, prob_weights,
         with_clk_rewards = torch.where(
             current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
-            current_basic_rewards[current_with_clk_indexs] * 10,
+            current_basic_rewards[current_with_clk_indexs] * 1,
             current_basic_rewards[current_with_clk_indexs] * 0
         )
 
@@ -200,7 +200,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                    num_workers=8, shuffle=1)  # 0.7153541503790021
+                                                    num_workers=8)  # 0.7153541503790021
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000000, num_workers=8)
 
     # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
@@ -297,12 +297,14 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if (i + 1) >= 5000:
+            if (i + 1) >= 500:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
-                if (i + 1) % 500 == 0:
-                    global_steps += batch_size * 500
+                # if (i
+
+                if (i + 1) % 5000 == 0:
+                    global_steps += batch_size * 5000
                     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                          device)
                     print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
@@ -325,11 +327,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     actions_df.to_csv(submission_path + 'test_actions.csv', header=None)
 
     test_pred_df = pd.DataFrame(data=predicts)
-
     test_pred_df.to_csv(submission_path + 'test_submission.csv', header=None)
 
-    day_aucs = [[valid_aucs[-1]]]
-    day_aucs_df = pd.DataFrame(data=day_aucs)
+    day_aucs_df = pd.DataFrame(data=valid_aucs)
     day_aucs_df.to_csv(submission_path + 'day_aucs.csv', header=None)
 
     rewards = {'rewards': rewards_records, 'timesteps': timesteps}
