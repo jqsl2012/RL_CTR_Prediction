@@ -69,20 +69,20 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
 
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    # FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    # FFM.load_state_dict(FFM_pretrain_params)
-    # FFM.eval()
-    #
-    # LR = p_model.LR(feature_nums)
-    # LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
-    # LR.load_state_dict(LR_pretrain_params)
-    # LR.eval()
-    #
-    # FM = p_model.FM(feature_nums, latent_dims)
-    # FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
-    # FM.load_state_dict(FM_pretrain_params)
-    # FM.eval()
+    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    FFM.load_state_dict(FFM_pretrain_params)
+    FFM.eval()
+
+    LR = p_model.LR(feature_nums)
+    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    LR.load_state_dict(LR_pretrain_params)
+    LR.eval()
+
+    FM = p_model.FM(feature_nums, latent_dims)
+    FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
+    FM.load_state_dict(FM_pretrain_params)
+    FM.eval()
 
     AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
     AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
@@ -120,7 +120,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
     DCN.eval()
 
     # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device), 5: FFM.to(device)}
 
     submission_path = data_path + dataset_name + campaign_id + 'average_pretrain' + '/'  # ctr 预测结果存放文件夹位置
     if not os.path.exists(submission_path):

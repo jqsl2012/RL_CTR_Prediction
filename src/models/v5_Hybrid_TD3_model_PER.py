@@ -299,7 +299,7 @@ class Hybrid_Actor(nn.Module):
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
         d_action_q_values = self.d_action_layer(feature_exact)
-        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=temprature, hard=True)
+        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=temprature, hard=False)
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
 
         return c_actions, ensemble_c_actions, d_action, ensemble_d_actions.view(-1, 1)
@@ -398,7 +398,7 @@ class Hybrid_TD3_Model():
         self.learn_iter = 0
         self.policy_freq = 2
 
-        self.temprature = 1.0
+        self.temprature = 0.3
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         if torch.max(self.memory.prioritys_) == 0.:
@@ -448,11 +448,11 @@ class Hybrid_TD3_Model():
         with torch.no_grad():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
 
-            # next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
-            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temperature=0.01, hard=True)
+            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
+            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temperature=0.6, hard=False)
 
             c_q1_target, c_q2_target = \
-                self.C_Critic_.evaluate(b_s_, c_actions_means_next)
+                self.C_Critic_.evaluate(b_s_, next_c_actions)
             d_q1_target, d_q2_target = self.D_Critic_.evaluate(b_s_, next_d_actions)
             c_q_target = torch.min(c_q1_target, c_q2_target)
             c_q_target = b_r + self.gamma * c_q_target
@@ -485,7 +485,7 @@ class Hybrid_TD3_Model():
         if self.learn_iter % self.policy_freq == 0:
             self.temprature = max(self.temprature, 0.01)
             c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
-            d_actions_q_values = gumbel_softmax_sample(d_actions_q_values, hard=True, temperature=0.01)
+            d_actions_q_values = gumbel_softmax_sample(d_actions_q_values, hard=False, temperature=0.01)
 
             # Hybrid_Actor
             # c a

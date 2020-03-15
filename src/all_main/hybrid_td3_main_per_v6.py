@@ -200,18 +200,18 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                    num_workers=8)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000000, num_workers=8)
+                                                    num_workers=8, shuffle=1)  # 0.7153541503790021
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 64, num_workers=8)
 
-    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    # FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    # FFM.load_state_dict(FFM_pretrain_params)
-    # FFM.eval()
-    #
-    # LR = p_model.LR(feature_nums)
-    # LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
-    # LR.load_state_dict(LR_pretrain_params)
-    # LR.eval()
+    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    FFM.load_state_dict(FFM_pretrain_params)
+    FFM.eval()
+
+    LR = p_model.LR(feature_nums)
+    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    LR.load_state_dict(LR_pretrain_params)
+    LR.eval()
 
     FM = p_model.FM(feature_nums, latent_dims)
     FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
@@ -254,7 +254,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     DCN.eval()
 
     # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device), 5: FFM.to(device)}
 
     model_dict_len = len(model_dict)
 
@@ -297,14 +297,13 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if (i + 1) >= 500:
+            if i >= 500:
                 critic_loss = rl_model.learn(embedding_layer)
+
                 train_critics.append(critic_loss)
 
-                # if (i
-
-                if (i + 1) % 5000 == 0:
-                    global_steps += batch_size * 5000
+                if i % 500 == 0:
+                    global_steps += batch_size * 500
                     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                          device)
                     print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
@@ -312,6 +311,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                     timesteps.append(global_steps)
                     valid_aucs.append(auc)
 
+                    torch.cuda.empty_cache()
+
+        print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
 
         print('epoch:', epoch_i, 'test auc:', valid_aucs[-1], '[{}s]'.format((train_end_time - train_start_time).seconds))
@@ -358,7 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V4', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V6', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)

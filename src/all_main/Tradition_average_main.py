@@ -6,7 +6,7 @@ import os
 import argparse
 import random
 from sklearn.metrics import roc_auc_score
-import src.models.p_model as Model
+import src.models.p_model as p_model
 import src.models.creat_data as Data
 
 import torch
@@ -27,18 +27,20 @@ class Weight_Training(nn.Module):
         self.input_dims = input_dims
         self.weight_dims = weight_dims
 
-        neuron_nums = [300, 300, 300]
+        neuron_nums = [512, 256, 300]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
-            nn.BatchNorm1d(neuron_nums[0]),
+            # nn.BatchNorm1d(neuron_nums[0]),
             nn.ReLU(),
+            nn.Dropout(p=0.2),
             nn.Linear(neuron_nums[0], neuron_nums[1]),
-            nn.BatchNorm1d(neuron_nums[1]),
+            # nn.BatchNorm1d(neuron_nums[1]),
             nn.ReLU(),
-            nn.Linear(neuron_nums[1], neuron_nums[2]),
-            nn.BatchNorm1d(neuron_nums[2]),
-            nn.ReLU(),
-            nn.Linear(neuron_nums[2], self.weight_dims),
+            nn.Dropout(p=0.2),
+            # nn.Linear(neuron_nums[1], neuron_nums[2]),
+            # nn.BatchNorm1d(neuron_nums[2]),
+            # nn.ReLU(),
+            nn.Linear(neuron_nums[1], self.weight_dims),
             nn.Softmax(dim=-1)
         )
 
@@ -154,22 +156,59 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    FFM = Model.FFM(feature_nums, field_nums, latent_dims)
+    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
     FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
     FFM.load_state_dict(FFM_pretrain_params)
     FFM.eval()
 
-    LR = Model.LR(feature_nums)
+    LR = p_model.LR(feature_nums)
     LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
     LR.load_state_dict(LR_pretrain_params)
     LR.eval()
 
-    FM = Model.FM(feature_nums, latent_dims)
+    FM = p_model.FM(feature_nums, latent_dims)
     FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
     FM.load_state_dict(FM_pretrain_params)
     FM.eval()
 
-    model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    AFM = p_model.AFM(feature_nums, field_nums, latent_dims)
+    AFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'AFMbest.pth')
+    AFM.load_state_dict(AFM_pretrain_params)
+    AFM.eval()
+
+    WandD = p_model.WideAndDeep(feature_nums, field_nums, latent_dims)
+    WandD_pretrain_params = torch.load(save_param_dir + campaign_id + 'W&Dbest.pth')
+    WandD.load_state_dict(WandD_pretrain_params)
+    WandD.eval()
+
+    # DeepFM = p_model.DeepFM(feature_nums, field_nums, latent_dims)
+    # DeepFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'DeepFMbest.pth')
+    # DeepFM.load_state_dict(DeepFM_pretrain_params)
+    # DeepFM.eval()
+
+    FNN = p_model.FNN(feature_nums, field_nums, latent_dims)
+    FNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'FNNbest.pth')
+    FNN.load_state_dict(FNN_pretrain_params)
+    FNN.eval()
+
+    IPNN = p_model.InnerPNN(feature_nums, field_nums, latent_dims)
+    IPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'IPNNbest.pth')
+    IPNN.load_state_dict(IPNN_pretrain_params)
+    IPNN.eval()
+
+    # OPNN = p_model.OuterPNN(feature_nums, field_nums, latent_dims)
+    # OPNN_pretrain_params = torch.load(save_param_dir + campaign_id + 'OPNNbest.pth')
+    # OPNN.load_state_dict(OPNN_pretrain_params)
+    # OPNN.eval()
+
+    DCN = p_model.DCN(feature_nums, field_nums, latent_dims)
+    DCN_pretrain_params = torch.load(save_param_dir + campaign_id + 'DCNbest.pth')
+    DCN.load_state_dict(DCN_pretrain_params)
+    DCN.eval()
+
+    # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device),
+                  5: FFM.to(device)}
 
     model = Weight_Training(len(model_dict), len(model_dict)).to(device)
 
