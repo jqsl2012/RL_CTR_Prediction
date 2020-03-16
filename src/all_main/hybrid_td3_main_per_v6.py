@@ -276,6 +276,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     timesteps = []
     train_critics = []
     global_steps = 0
+
     for epoch_i in range(epoch):
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
@@ -297,21 +298,44 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if i >= 500:
+            if i >= 2560:
                 critic_loss = rl_model.learn(embedding_layer)
-
                 train_critics.append(critic_loss)
 
+            if i <= 5000:
                 if i % 500 == 0:
-                    global_steps += batch_size * 500
-                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-                                                         device)
-                    print('timesteps', global_steps, 'test_auc', auc, 'test_rewards', test_rewards)
+                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                              test_data_loader,
+                                                                              device)
+                    print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
                     rewards_records.append(test_rewards)
-                    timesteps.append(global_steps)
+                    timesteps.append(i * 10)
                     valid_aucs.append(auc)
 
                     torch.cuda.empty_cache()
+            else:
+                if i <= (len(train_data) // 10) - 100:
+                    if i % 5000 == 0:
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
+                                                             device)
+                        print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * 10)
+                        valid_aucs.append(auc)
+
+                        torch.cuda.empty_cache()
+                else:
+                    if i % 2 == 0:
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
+                                                                                  embedding_layer, test_data_loader,
+                                                                                  device)
+                        print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * 10)
+                        valid_aucs.append(auc)
+
+                        torch.cuda.empty_cache()
+
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
@@ -359,7 +383,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_PER_V6', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
