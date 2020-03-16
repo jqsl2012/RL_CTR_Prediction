@@ -296,7 +296,7 @@ class C_Actor(nn.Module):
     def evaluate(self, input):
         # obs = self.bn_input(input)
         obs = input
-        c_actions_means = self.mlp(obs)
+        c_actions_means = torch.tanh(self.mlp(obs))
 
         return c_actions_means
 
@@ -338,7 +338,7 @@ class D_Actor(nn.Module):
         # obs = self.bn_input(input)
         obs = input
         d_action_q_values = self.mlp(obs)
-        d_action = gumbel_softmax_sample(logits=d_action_q_values, temperature=temprature, hard=False)
+        d_action = gumbel_softmax_sample(logits=d_action_q_values + torch.randn_like(d_action_q_values) * 0.1, temperature=temprature, hard=False)
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
 
         return d_action, ensemble_d_actions.view(-1, 1)
@@ -388,10 +388,10 @@ class Hybrid_TD3_Model():
             lr_C_A=1e-3,
             lr_D_A=1e-3,
             lr_C=1e-2,
-            reward_decay=1,
+            reward_decay=0.1,
             memory_size=4096000,
             batch_size=256,
-            tau=0.005,  # for target network soft update
+            tau=0.001,  # for target network soft update
             device='cuda:0',
     ):
         self.feature_nums = feature_nums
@@ -408,9 +408,9 @@ class Hybrid_TD3_Model():
         self.tau = tau
         self.device = device
 
-        self.memory_counter = 0
-
         setup_seed(1)
+
+        self.memory_counter = 0
 
         self.input_dims = self.field_nums * (self.field_nums - 1) // 2 + self.field_nums * self.latent_dims
 
@@ -437,9 +437,9 @@ class Hybrid_TD3_Model():
         self.learn_iter = 0
         self.policy_freq = 2
 
-        self.temprature = 1.0
-        self.temprature_min = 0.5
-        self.anneal_rate = 0.0001
+        self.temprature = 3.0
+        self.temprature_min = 1.0
+        self.anneal_rate = 0.00005
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         if torch.max(self.memory.prioritys_) == 0.:
@@ -479,8 +479,7 @@ class Hybrid_TD3_Model():
 
     def learn(self, embedding_layer):
         self.learn_iter += 1
-        self.temprature = max(self.temprature, 1.0)
-        # print(self.temprature)
+
         # sample
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
 
@@ -497,7 +496,7 @@ class Hybrid_TD3_Model():
             d_actions_q_values_next = self.D_Actor_.evaluate(b_s_)
 
             next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.randn_like(c_actions_means_next) * 0.2, -0.5, 0.5), -1, 1)
-            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temperature=self.temprature, hard=False, uniform_seed=1.0)
+            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next + torch.clamp(torch.randn_like(d_actions_q_values_next), -0.5, 0.5), temperature=self.temprature, hard=False)
 
             c_q1_target, c_q2_target = \
                 self.C_Critic_.evaluate(b_s_, next_c_actions)
@@ -532,16 +531,16 @@ class Hybrid_TD3_Model():
 
         if self.learn_iter % self.policy_freq == 0:
             c_actions_means = self.C_Actor.evaluate(b_s)
-            d_actions_q_values = self.D_Actor.evaluate(b_s)
 
-            d_actions_q_values = gumbel_softmax_sample(d_actions_q_values, hard=False, temperature=self.temprature)
+            d_actions_q_values = self.D_Actor.evaluate(b_s)
+            d_actions_q_values_ = gumbel_softmax_sample(d_actions_q_values, hard=False, temperature=self.temprature)
 
             # Hybrid_Actor
             # c a
             c_a_critic_value = self.C_Critic.evaluate_q_1(b_s, c_actions_means)
-            d_a_critic_value = self.D_Critic.evaluate_q_1(b_s, d_actions_q_values)
-            c_a_loss = -c_a_critic_value.mean()
-            d_a_loss = -d_a_critic_value.mean()
+            d_a_critic_value = self.D_Critic.evaluate_q_1(b_s, d_actions_q_values_)
+            c_a_loss = -c_a_critic_value.mean() + (c_actions_means ** 2).mean() * 1e-3
+            d_a_loss = -d_a_critic_value.mean() + (d_actions_q_values ** 2).mean() * 1e-3
 
             self.optimizer_c_a.zero_grad()
             c_a_loss.backward()

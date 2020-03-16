@@ -147,7 +147,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-            # print(actions, prob_weights)
+
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -201,7 +201,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
                                                     num_workers=8, shuffle=1)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096 * 64, num_workers=8)
+    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
     FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
@@ -254,7 +254,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     DCN.eval()
 
     # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device), 5: FFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: FFM.to(device)}
 
     model_dict_len = len(model_dict)
 
