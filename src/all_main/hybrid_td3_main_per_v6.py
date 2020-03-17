@@ -302,25 +302,13 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
-            if i <= 5000:
-                if i % 500 == 0:
-                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
-                                                                              test_data_loader,
-                                                                              device)
-                    print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
-                    rewards_records.append(test_rewards)
-                    timesteps.append(i * 10)
-                    valid_aucs.append(auc)
-
-                    torch.cuda.empty_cache()
-            else:
-                if i <= (len(train_data) // 10) - 100:
+                if i <= (len(train_data) // 1) - 100:
                     if i % 5000 == 0:
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                              device)
-                        print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
+                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
                         rewards_records.append(test_rewards)
-                        timesteps.append(i * 10)
+                        timesteps.append(i)
                         valid_aucs.append(auc)
 
                         torch.cuda.empty_cache()
@@ -329,9 +317,9 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
                                                                                   embedding_layer, test_data_loader,
                                                                                   device)
-                        print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
+                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
                         rewards_records.append(test_rewards)
-                        timesteps.append(i * 10)
+                        timesteps.append(i)
                         valid_aucs.append(auc)
 
                         torch.cuda.empty_cache()

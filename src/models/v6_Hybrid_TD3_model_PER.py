@@ -327,7 +327,7 @@ class D_Actor(nn.Module):
         self.reset_parameters()
 
         self.mean = torch.zeros(size=[1, 1]).cuda()
-        self.std = torch.zeros(size=[1, 1]).cuda() * 0.1
+        self.std = torch.zeros(size=[1, 1]).cuda() * 0.2
 
     def reset_parameters(self):
         for i in range(3):
@@ -394,7 +394,7 @@ class Hybrid_TD3_Model():
             lr_C_A=1e-3,
             lr_D_A=1e-3,
             lr_C=1e-2,
-            reward_decay=0.1,
+            reward_decay=1,
             memory_size=4096000,
             batch_size=256,
             tau=0.005,  # for target network soft update
@@ -448,7 +448,7 @@ class Hybrid_TD3_Model():
         self.anneal_rate = 0.00005
 
         self.mean = torch.zeros(size=[1, 1]).to(self.device)
-        self.std = torch.zeros(size=[1, 1]).to(self.device) * 0.2
+        self.std = torch.zeros(size=[1, 1]).to(self.device) * 0.4
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         if torch.max(self.memory.prioritys_) == 0.:
@@ -504,8 +504,8 @@ class Hybrid_TD3_Model():
             c_actions_means_next = self.C_Actor_.evaluate(b_s_)
             d_actions_q_values_next = self.D_Actor_.evaluate(b_s_)
 
-            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.normal(self.mean, self.std), -0.5, 0.5), -1, 1)
-            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next + torch.clamp(torch.normal(self.mean, self.std) * 0.2, -0.5, 0.5), temperature=self.temprature, hard=False)
+            next_c_actions = torch.clamp(c_actions_means_next + torch.clamp(torch.normal(self.mean, self.std), -0.8, 0.8), -1, 1)
+            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next + torch.clamp(torch.normal(self.mean, self.std), -0.8, 0.8), temperature=self.temprature, hard=False)
 
             c_q1_target, c_q2_target = \
                 self.C_Critic_.evaluate(b_s_, next_c_actions)
