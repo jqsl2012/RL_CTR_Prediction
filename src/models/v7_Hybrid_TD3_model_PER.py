@@ -198,7 +198,7 @@ class C_Actor(nn.Module):
         c_action_means = self.mlp(obs)
 
         c_actions = torch.clamp(c_action_means + torch.normal(self.mean.expand_as(c_action_means), self.std.expand_as(c_action_means)), -1, 1)  # 用于返回训练
-        ensemble_c_actions = boltzmann_softmax(c_actions, temprature)
+        ensemble_c_actions = torch.softmax(c_actions, dim=-1)
 
         return c_actions, ensemble_c_actions
 
@@ -251,7 +251,7 @@ class D_Actor(nn.Module):
         return d_actions_q_values
 
 def boltzmann_softmax(actions, temprature):
-    return (actions / temprature).exp() / torch.sum((actions / temprature).exp(), dim=-1)
+    return (actions / temprature).exp() / torch.sum((actions / temprature).exp(), dim=-1).view(-1, 1)
 
 def gumbel_softmax_sample(logits, temperature=1.0, hard=False, eps=1e-8, uniform_seed=1.0):
     U = Variable(torch.FloatTensor(*logits.shape).uniform_().cuda(), requires_grad=False)
@@ -372,7 +372,7 @@ class Hybrid_TD3_Model():
             d_q_values = self.D_Actor.evaluate(state)
             c_action_means = self.C_Actor.evaluate(state, boltzmann_softmax(d_q_values, self.temprature))
 
-        ensemble_c_actions = boltzmann_softmax(c_action_means, self.temprature)
+        ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
         ensemble_d_actions = torch.argsort(-d_q_values)[:, 0] + 1
 
         return ensemble_d_actions.view(-1, 1), ensemble_c_actions
@@ -437,12 +437,12 @@ class Hybrid_TD3_Model():
             c_a_loss = -a_critic_value.mean()
 
             self.optimizer_c_a.zero_grad()
-            c_a_loss.backward()
+            c_a_loss.backward(retain_graph=True)
             nn.utils.clip_grad_norm_(self.C_Actor.parameters(), 0.5)
             self.optimizer_c_a.step()
 
             self.optimizer_d_a.zero_grad()
-            c_a_loss.backward()
+            c_a_loss.backward(retain_graph=True)
             nn.utils.clip_grad_norm_(self.D_Actor.parameters(), 0.5)
             self.optimizer_d_a.step()
 

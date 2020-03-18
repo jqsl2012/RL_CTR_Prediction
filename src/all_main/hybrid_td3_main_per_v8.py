@@ -147,7 +147,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-
+            # print(actions, prob_weights)
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -254,7 +254,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     DCN.eval()
 
     # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: FFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: FFM.to(device), 5: AFM.to(device)}
 
     model_dict_len = len(model_dict)
 
@@ -277,6 +277,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     train_critics = []
     global_steps = 0
 
+    random = True
     for epoch_i in range(epoch):
         torch.cuda.empty_cache()  # 清理无用的cuda中间变量缓存
 
@@ -287,7 +288,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             embedding_vectors = embedding_layer.forward(features)
 
-            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(embedding_vectors)
+            if i < 2000:
+                c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
+                    embedding_vectors, True)
+            else:
+                c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
+                    embedding_vectors, False)
 
             y_preds, rewards = \
                 generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, labels, device,
@@ -298,17 +304,27 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if i >= 2560:
+            # if i == 2000:
+            #     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+            #                                                               test_data_loader,
+            #                                                               device)
+            #     print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+            #     rewards_records.append(test_rewards)
+            #     timesteps.append(i)
+            #     valid_aucs.append(auc)
+
+                # torch.cuda.empty_cache()
+            if i >= 2000:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
-                if i <= (len(train_data) // 1) - 100:
-                    if i % 5000 == 0:
+                if i <= (len(train_data) // 10) - 100:
+                    if i % 500 == 0:
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                              device)
-                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+                        print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
                         rewards_records.append(test_rewards)
-                        timesteps.append(i)
+                        timesteps.append(i * 10)
                         valid_aucs.append(auc)
 
                         torch.cuda.empty_cache()
@@ -317,13 +333,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
                                                                                   embedding_layer, test_data_loader,
                                                                                   device)
-                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+                        print('timesteps', i * 10, 'test_auc', auc, 'test_rewards', test_rewards)
                         rewards_records.append(test_rewards)
-                        timesteps.append(i)
+                        timesteps.append(i * 10)
                         valid_aucs.append(auc)
 
                         torch.cuda.empty_cache()
-
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
@@ -371,7 +386,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_PER_V6', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)

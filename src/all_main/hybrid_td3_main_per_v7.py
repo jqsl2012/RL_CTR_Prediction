@@ -147,7 +147,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
             embedding_vectors = embedding_layer.forward(features)
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-
+            print(actions, prob_weights)
             y, rewards = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
@@ -298,7 +298,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             rl_model.store_transition(transitions)
 
-            if i >= 2560:
+            if i >= 50:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
@@ -371,7 +371,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='1458/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_PER_V6', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
