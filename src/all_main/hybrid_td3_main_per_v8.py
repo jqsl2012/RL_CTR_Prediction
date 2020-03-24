@@ -202,7 +202,7 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
 
             actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
 
-            y, rewards = generate_preds(model_dict, features, actions, prob_weights,
+            y, rewards, return_c_actions = generate_preds(model_dict, features, actions, prob_weights,
                                                           labels, device, mode='test')
 
             targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
@@ -227,7 +227,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
     train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                    num_workers=8, shuffle=10)  # 0.7153541503790021
+                                                    num_workers=8, shuffle=1)  # 0.7153541503790021
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096, num_workers=8)
 
     FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
@@ -366,9 +366,6 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                         valid_aucs.append(auc)
 
                         torch.cuda.empty_cache()
-
-                if i > 110000:
-                    break
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()

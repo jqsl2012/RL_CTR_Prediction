@@ -363,10 +363,6 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
                         torch.cuda.empty_cache()
 
-                if i > 110000:
-                    break
-
-        print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
 
         print('epoch:', epoch_i, 'test auc:', valid_aucs[-1], '[{}s]'.format((train_end_time - train_start_time).seconds))
@@ -417,9 +413,9 @@ if __name__ == '__main__':
     parser.add_argument('--model_name', default='PA_DDPG', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--init_lr_a', type=float, default=3e-4)
+    parser.add_argument('--init_lr_a', type=float, default=1e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=3e-4)
+    parser.add_argument('--init_lr_c', type=float, default=1e-3)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=1)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)

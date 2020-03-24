@@ -128,7 +128,7 @@ class Hybrid_Critic(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [512, 256]
+        neuron_nums = [256, 256]
 
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
@@ -182,7 +182,7 @@ class Hybrid_Actor(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [512, 256]
+        neuron_nums = [256, 256]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.ReLU(),
@@ -216,8 +216,8 @@ class Hybrid_Actor(nn.Module):
         c_action_means = self.c_action_layer(feature_exact)
         c_actions = torch.clamp(c_action_means + torch.randn_like(c_action_means) * 0.1, -1, 1)  # 用于返回训练
 
-        ensemble_c_actions = torch.softmax(c_actions, dim=-1)
-        # ensemble_c_actions = boltzmann_softmax(c_actions, 0.2)
+        # ensemble_c_actions = torch.softmax(c_actions, dim=-1)
+        ensemble_c_actions = boltzmann_softmax(c_actions, 0.1)
         # print('1', ensemble_c_actions)
         # print('2', boltzmann_softmax(c_actions, 0.1))
 
@@ -284,7 +284,7 @@ class Hybrid_TD3_Model():
             reward_decay=1.0,
             memory_size=4096000,
             batch_size=256,
-            tau=0.01,  # for target network soft update
+            tau=0.005,  # for target network soft update
             device='cuda:0',
     ):
         self.feature_nums = feature_nums
@@ -316,8 +316,8 @@ class Hybrid_TD3_Model():
         self.Hybrid_Critic_ = copy.deepcopy(self.Hybrid_Critic)
 
         # 优化器
-        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A)
-        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C)
+        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A, betas=(0.9, 0.99))
+        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C, betas=(0.9, 0.99))
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
@@ -390,8 +390,8 @@ class Hybrid_TD3_Model():
         with torch.no_grad():
             c_action_means, d_q_values = self.Hybrid_Actor.evaluate(state)
 
-        ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
-        # ensemble_c_actions = boltzmann_softmax(c_action_means, 0.2)
+        # ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
+        ensemble_c_actions = boltzmann_softmax(c_action_means, 0.1)
 
         ensemble_d_actions = torch.argmax(d_q_values, dim=-1) + 1
 
@@ -452,7 +452,7 @@ class Hybrid_TD3_Model():
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()
-        nn.utils.clip_grad_norm_(self.Hybrid_Critic.parameters(), 0.5)
+        nn.utils.clip_grad_norm_(self.Hybrid_Critic.parameters(), 0.8)
         self.optimizer_c.step()
 
         critic_loss_r = critic_loss.item()
@@ -472,12 +472,12 @@ class Hybrid_TD3_Model():
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
             a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means, d_actions_q_values_)
-            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-2
+            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-3
 
             # print(c_a_loss, c_reg, d_reg)
             self.optimizer_a.zero_grad()
             c_a_loss.backward()
-            nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.5)
+            nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.8)
             self.optimizer_a.step()
 
             self.soft_update(self.Hybrid_Critic, self.Hybrid_Critic_)

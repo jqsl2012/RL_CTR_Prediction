@@ -251,7 +251,7 @@ class Hybrid_TD3_Model():
             reward_decay=1.0,
             memory_size=4096000,
             batch_size=256,
-            tau=0.01,  # for target network soft update
+            tau=0.005,  # for target network soft update
             device='cuda:0',
     ):
         self.feature_nums = feature_nums
@@ -283,13 +283,13 @@ class Hybrid_TD3_Model():
         self.Hybrid_Critic_ = copy.deepcopy(self.Hybrid_Critic)
 
         # 优化器
-        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A)
-        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C)
+        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A, betas=(0.9, 0.99))
+        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C, betas=(0.9, 0.99))
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
         self.learn_iter = 0
-        self.policy_freq = 2
+        self.policy_freq = 1
 
     def store_transition(self, transitions): # 所有的值都应该弄成float
         if torch.max(self.memory.prioritys_) == 0.:
