@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v8_Hybrid_TD3_model_PER as td3_model
+import src.models.PA_DDPG_model as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -315,10 +315,6 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             embedding_vectors = embedding_layer.forward(features)
 
-            # if i < 2000:
-            #     c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
-            #         embedding_vectors, True)
-            # else:
             c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
                 embedding_vectors, False)
 
@@ -326,7 +322,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                 generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, c_actions, labels, device,
                                mode='train')
 
-            transitions = torch.cat([features.float(), return_c_actions, d_q_values, ensemble_d_actions.float(), rewards],
+            transitions = torch.cat([features.float(), c_actions, d_q_values, ensemble_d_actions.float(), rewards],
                                     dim=1)
 
             rl_model.store_transition(transitions)
@@ -418,7 +414,7 @@ if __name__ == '__main__':
                                                'a/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V9', help='LR, FM, FFM, W&D')
+    parser.add_argument('--model_name', default='PA_DDPG', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)

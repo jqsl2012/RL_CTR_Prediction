@@ -195,7 +195,8 @@ class Hybrid_Actor(nn.Module):
             nn.Tanh()
         )
         self.d_action_layer = nn.Sequential(
-            nn.Linear(neuron_nums[1], self.action_dims)
+            nn.Linear(neuron_nums[1], self.action_dims),
+            nn.Tanh()
         )
 
         self.reset_parameters()
@@ -208,7 +209,7 @@ class Hybrid_Actor(nn.Module):
         self.c_action_layer[0].weight.data.uniform_(-0.003, 0.003)
         self.d_action_layer[0].weight.data.uniform_(-0.003, 0.003)
 
-    def act(self, input, temprature):
+    def act(self, input):
         obs = self.bn_input(input)
         # obs = input
         feature_exact = self.mlp(obs)
@@ -217,14 +218,10 @@ class Hybrid_Actor(nn.Module):
         c_actions = torch.clamp(c_action_means + torch.randn_like(c_action_means) * 0.1, -1, 1)  # 用于返回训练
 
         ensemble_c_actions = torch.softmax(c_actions, dim=-1)
-        # ensemble_c_actions = boltzmann_softmax(c_actions, 0.2)
-        # print('1', ensemble_c_actions)
-        # print('2', boltzmann_softmax(c_actions, 0.1))
 
         d_action_q_values = self.d_action_layer(feature_exact)
 
-        d_action = gumbel_softmax_sample(logits=d_action_q_values,
-                                         temprature=temprature, hard=True)
+        d_action = torch.softmax(torch.clamp(d_action_q_values + torch.randn_like(d_action_q_values) * 0.1, -1, 1), dim=-1)
 
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
 
@@ -239,36 +236,6 @@ class Hybrid_Actor(nn.Module):
         d_actions = self.d_action_layer(feature_exact)
 
         return c_actions, d_actions
-
-def boltzmann_softmax(actions, temprature):
-    return (actions / temprature).exp() / torch.sum((actions / temprature).exp(), dim=-1).view(-1, 1)
-
-def gumbel_softmax_sample(logits, temprature=1.0, hard=True, eps=1e-10, uniform_seed=1.0):
-    U = Variable(torch.FloatTensor(*logits.shape).uniform_().cuda(), requires_grad=False)
-    y = logits + -torch.log(-torch.log(U + eps) + eps)
-    y = F.softmax(y / temprature, dim=-1)
-
-    if hard:
-        y_hard = onehot_from_logits(y)
-        y = (y_hard - y).detach() + y
-
-    return y
-
-def onehot_from_logits(logits, eps=0.0):
-    """
-    Given batch of logits, return one-hot sample using epsilon greedy strategy
-    (based on given epsilon)
-    """
-    # get best (according to current policy) actions in one-hot form
-    argmax_acs = (logits == logits.max(1, keepdim=True)[0]).float()
-    if eps == 0.0:
-        return argmax_acs
-    # get random actions in one-hot form
-    rand_acs = Variable(torch.eye(logits.shape[1])[[np.random.choice(
-        range(logits.shape[1]), size=logits.shape[0])]], requires_grad=False)
-    # chooses between best and random actions using epsilon greedy
-    return torch.stack([argmax_acs[i] if r > eps else rand_acs[i] for i, r in
-                        enumerate(torch.rand(logits.shape[0]))])
 
 class Hybrid_TD3_Model():
     def __init__(
@@ -324,15 +291,12 @@ class Hybrid_TD3_Model():
         self.learn_iter = 0
         self.policy_freq = 2
 
-        self.temprature = 1.0
-        self.anneal_rate = 1e-5
-
     def store_transition(self, transitions): # 所有的值都应该弄成float
         if torch.max(self.memory.prioritys_) == 0.:
             td_errors = torch.cat([torch.ones(size=[len(transitions), 1]).to(self.device), transitions[:, -1].view(-1, 1)], dim=-1)
         else:
             td_errors = torch.cat([torch.max(self.memory.prioritys_).expand_as(torch.ones(size=[len(transitions), 1])).to(self.device), transitions[:, -1].view(-1, 1)], dim=-1)
-    #
+
         self.memory.add(td_errors, transitions)
 
     # def store_transition(self, transitions):  # 所有的值都应该弄成float
@@ -369,8 +333,8 @@ class Hybrid_TD3_Model():
     def choose_action(self, state, random):
         self.Hybrid_Actor.eval()
         with torch.no_grad():
-            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state, self.temprature)
-
+            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = self.Hybrid_Actor.act(state)
+            #
             # if random:
             #     # c_actions = torch.clamp(torch.randn_like(c_actions), -1, 1)
             #     ensemble_c_actions = torch.softmax(c_actions, dim=-1)
@@ -391,7 +355,6 @@ class Hybrid_TD3_Model():
             c_action_means, d_q_values = self.Hybrid_Actor.evaluate(state)
 
         ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
-        # ensemble_c_actions = boltzmann_softmax(c_action_means, 0.2)
 
         ensemble_d_actions = torch.argmax(d_q_values, dim=-1) + 1
 
@@ -401,26 +364,9 @@ class Hybrid_TD3_Model():
         for param_target, param in zip(net_target.parameters(), net.parameters()):
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
-    def to_next_state_c_actions(self, next_d_actions, next_c_actions):
-        choose_d_ = torch.argmax(next_d_actions, dim=-1)+ 1
-
-        sortindex_c_actions = torch.argsort(-next_c_actions, dim=-1)
-
-        return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
-
-        for i, choose_d in enumerate(choose_d_):
-            choose_c_actions_index = sortindex_c_actions[i, :choose_d]
-            origin_next_c_actions = next_c_actions[i, choose_c_actions_index]
-            return_c_actions[i, choose_c_actions_index] = origin_next_c_actions + torch.randn_like(origin_next_c_actions) * 0.1
-
-        return torch.clamp(return_c_actions, -1, 1)
-
 
     def learn(self, embedding_layer):
         self.learn_iter += 1
-
-        if self.learn_iter % 2000 == 0:
-            self.temprature = max(np.exp(-self.anneal_rate * self.learn_iter), 0.5)
 
         # sample
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
@@ -435,20 +381,19 @@ class Hybrid_TD3_Model():
 
         with torch.no_grad():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
-            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next, temprature=self.temprature, hard=True)
-            next_c_actions = self.to_next_state_c_actions(next_d_actions, c_actions_means_next)
+            next_d_actions = d_actions_q_values_next
+            next_c_actions = c_actions_means_next
 
-            q1_target, q2_target = \
-                self.Hybrid_Critic_.evaluate(b_s_, next_c_actions, next_d_actions)
+            q1_target = \
+                self.Hybrid_Critic_.evaluate_q_1(b_s_, next_c_actions, next_d_actions)
 
-            q_target = torch.min(q1_target, q2_target)
-            q_target = b_r + self.gamma * q_target
+            q_target = b_r + self.gamma * q1_target
 
-        q1, q2 = self.Hybrid_Critic.evaluate(b_s, b_c_a, b_d_a)
+        q1 = self.Hybrid_Critic.evaluate_q_1(b_s, b_c_a, b_d_a)
 
-        critic_td_error = (q_target * 2 - q1 - q2).detach() / 2
+        critic_td_error = (q_target - q1).detach()
 
-        critic_loss = (ISweights * (F.mse_loss(q1, q_target, reduction='none') + F.mse_loss(q2, q_target, reduction='none'))).mean()
+        critic_loss = (ISweights * F.mse_loss(q1, q_target, reduction='none')).mean()
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()
@@ -461,7 +406,6 @@ class Hybrid_TD3_Model():
 
         if self.learn_iter % self.policy_freq == 0:
             c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
-            d_actions_q_values_ = gumbel_softmax_sample(logits=d_actions_q_values, temprature=self.temprature, hard=True)
 
             # Hybrid_Actor
             # c_action_softmax = torch.softmax(c_actions_means, dim=-1)
@@ -471,7 +415,7 @@ class Hybrid_TD3_Model():
 
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
-            a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means, d_actions_q_values_)
+            a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means, d_actions_q_values)
             c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-2
 
             # print(c_a_loss, c_reg, d_reg)
