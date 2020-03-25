@@ -7,7 +7,7 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v8_Hybrid_TD3_model_PER as td3_model
+import src.models.v9_Hybrid_TD3_model_PER as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
 
@@ -171,9 +171,9 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
         for i, (features, labels) in enumerate(data_loader):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
-            embedding_vectors = embedding_layer.forward(features)
+            ctr_states = torch.cat([model_dict[i](features) for i in range(len(model_dict))], dim=-1)
 
-            actions, prob_weights, c_actions = rl_model.choose_best_action(embedding_vectors)
+            actions, prob_weights, c_actions = rl_model.choose_best_action(ctr_states)
             # print(actions, prob_weights)
             y, rewards, return_c_actions = generate_preds(model_dict, features, actions, prob_weights, c_actions,
                                                           labels, device, mode='test')
@@ -188,30 +188,6 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
             final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
 
     return roc_auc_score(targets, predicts), predicts, test_rewards.mean().item(), final_actions, final_prob_weights
-
-
-def submission(rl_model, model_dict, embedding_layer, data_loader, device):
-    targets, predicts = list(), list()
-    final_actions = torch.LongTensor().to(device)
-    final_prob_weights = torch.FloatTensor().to(device)
-    with torch.no_grad():
-        for features, labels in data_loader:
-            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
-
-            embedding_vectors = embedding_layer.forward(features)
-
-            actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
-
-            y, rewards, return_c_actions = generate_preds(model_dict, features, actions, prob_weights,
-                                                          labels, device, mode='test')
-
-            targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
-            predicts.extend(y.tolist())
-
-            final_actions = torch.cat([final_actions, actions], dim=0)
-            final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
-
-    return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
 
 def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
@@ -313,20 +289,20 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
         for i, (features, labels) in enumerate(tqdm.tqdm(train_data_loader, smoothing=0, mininterval=1.0)):
             features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
 
-            embedding_vectors = embedding_layer.forward(features)
+            ctr_states = torch.cat([model_dict[i](features) for i in range(len(model_dict))], dim=-1).detach()
 
             # if i < 2000:
             #     c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
             #         embedding_vectors, True)
             # else:
             c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
-                embedding_vectors, False)
+                ctr_states, False)
 
             y_preds, rewards, return_c_actions = \
                 generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, c_actions, labels, device,
                                mode='train')
 
-            transitions = torch.cat([features.float(), return_c_actions, d_q_values, ensemble_d_actions.float(), rewards],
+            transitions = torch.cat([ctr_states, return_c_actions, d_q_values, ensemble_d_actions.float(), rewards],
                                     dim=1)
 
             rl_model.store_transition(transitions)
@@ -346,7 +322,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                 train_critics.append(critic_loss)
 
                 if i <= (len(train_data) // batch_size) - 100:
-                    if i % 1000 == 0:
+                    if i % 500 == 0:
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
                                                              device)
                         print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)

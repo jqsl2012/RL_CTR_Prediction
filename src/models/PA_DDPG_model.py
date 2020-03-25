@@ -128,7 +128,7 @@ class Hybrid_Critic(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [512, 256]
+        neuron_nums = [256, 256]
 
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
@@ -182,7 +182,7 @@ class Hybrid_Actor(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [512, 256]
+        neuron_nums = [256, 256]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             nn.ReLU(),
@@ -283,8 +283,8 @@ class Hybrid_TD3_Model():
         self.Hybrid_Critic_ = copy.deepcopy(self.Hybrid_Critic)
 
         # 优化器
-        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A, betas=(0.9, 0.99))
-        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C, betas=(0.9, 0.99))
+        self.optimizer_a = torch.optim.Adam(self.Hybrid_Actor.parameters(), lr=self.lr_C_A)
+        self.optimizer_c = torch.optim.Adam(self.Hybrid_Critic.parameters(), lr=self.lr_C)
 
         self.loss_func = nn.MSELoss(reduction='mean')
 
@@ -416,7 +416,7 @@ class Hybrid_TD3_Model():
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
             a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means, d_actions_q_values)
-            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-2
+            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-3
 
             # print(c_a_loss, c_reg, d_reg)
             self.optimizer_a.zero_grad()
