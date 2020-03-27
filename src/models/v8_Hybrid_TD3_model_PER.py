@@ -415,6 +415,20 @@ class Hybrid_TD3_Model():
 
         return torch.clamp(return_c_actions, -2, 2)
 
+    def to_current_state_c_actions(self, next_d_actions, next_c_actions):
+        choose_d_ = torch.argmax(next_d_actions, dim=-1)+ 1
+
+        sortindex_c_actions = torch.argsort(-next_c_actions, dim=-1)
+
+        return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
+
+        for i, choose_d in enumerate(choose_d_):
+            choose_c_actions_index = sortindex_c_actions[i, :choose_d]
+            origin_next_c_actions = next_c_actions[i, choose_c_actions_index]
+            return_c_actions[i, choose_c_actions_index] = origin_next_c_actions
+
+        return torch.clamp(return_c_actions, -2, 2)
+
 
     def learn(self, embedding_layer):
         self.learn_iter += 1
@@ -461,8 +475,9 @@ class Hybrid_TD3_Model():
 
         if self.learn_iter % self.policy_freq == 0:
             c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
-            d_actions_q_values_ = gumbel_softmax_sample(logits=d_actions_q_values, temprature=self.temprature, hard=False)
-            # print(d_actions_q_values_)
+            d_actions_q_values_ = gumbel_softmax_sample(logits=d_actions_q_values, temprature=0.01, hard=False)
+            c_actions_means_ = self.to_current_state_c_actions(d_actions_q_values_, c_actions_means)
+            print(c_actions_means_)
             # Hybrid_Actor
             # c_action_softmax = torch.softmax(c_actions_means, dim=-1)
             # d_action_softmax = torch.softmax(d_actions_q_values, dim=-1)
@@ -471,8 +486,8 @@ class Hybrid_TD3_Model():
 
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
-            a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means, d_actions_q_values_)
-            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-2
+            a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means_, d_actions_q_values_)
+            c_a_loss = -a_critic_value.mean()
 
             # print(c_a_loss, c_reg, d_reg)
             self.optimizer_a.zero_grad()

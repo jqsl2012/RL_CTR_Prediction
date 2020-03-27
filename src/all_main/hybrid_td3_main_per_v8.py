@@ -315,12 +315,12 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             embedding_vectors = embedding_layer.forward(features)
 
-            # if i < 2000:
-            #     c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
-            #         embedding_vectors, True)
-            # else:
-            c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
-                embedding_vectors, False)
+            if i < 200:
+                c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
+                    embedding_vectors, True)
+            else:
+                c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
+                    embedding_vectors, False)
 
             y_preds, rewards, return_c_actions = \
                 generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, c_actions, labels, device,
@@ -341,31 +341,31 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
             #     valid_aucs.append(auc)
 
                 # torch.cuda.empty_cache()
-            if i >= 2000:
+            if i >= 200:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
-
-                if i <= (len(train_data) // batch_size) - 100:
-                    if i % 1000 == 0:
-                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-                                                             device)
-                        print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-                        rewards_records.append(test_rewards)
-                        timesteps.append(i * batch_size)
-                        valid_aucs.append(auc)
-
-                        torch.cuda.empty_cache()
-                else:
-                    if i % batch_size == 0:
-                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
-                                                                                  embedding_layer, test_data_loader,
-                                                                                  device)
-                        print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-                        rewards_records.append(test_rewards)
-                        timesteps.append(i * batch_size)
-                        valid_aucs.append(auc)
-
-                        torch.cuda.empty_cache()
+            #
+            #     if i <= (len(train_data) // batch_size) - 100:
+            #         if i % 1000 == 0:
+            #             auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
+            #                                                  device)
+            #             print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+            #             rewards_records.append(test_rewards)
+            #             timesteps.append(i * batch_size)
+            #             valid_aucs.append(auc)
+            #
+            #             torch.cuda.empty_cache()
+            #     else:
+            #         if i % batch_size == 0:
+            #             auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
+            #                                                                       embedding_layer, test_data_loader,
+            #                                                                       device)
+            #             print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+            #             rewards_records.append(test_rewards)
+            #             timesteps.append(i * batch_size)
+            #             valid_aucs.append(auc)
+            #
+            #             torch.cuda.empty_cache()
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
