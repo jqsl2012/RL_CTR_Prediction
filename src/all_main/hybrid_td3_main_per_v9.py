@@ -175,6 +175,7 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
 
             actions, prob_weights, c_actions = rl_model.choose_best_action(embedding_vectors)
             # print(actions, prob_weights)
+            # print(torch.sum(prob_weights, dim=-1))
             y, rewards, return_c_actions = generate_preds(model_dict, features, actions, prob_weights, c_actions,
                                                           labels, device, mode='test')
 
@@ -315,7 +316,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
             embedding_vectors = embedding_layer.forward(features)
 
-            if i <= 2000:
+            if i < 2000:
                 c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
                     embedding_vectors, True)
             else:
@@ -341,10 +342,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
             #     valid_aucs.append(auc)
 
                 # torch.cuda.empty_cache()
-            if i > 2000:
-                critic_loss = rl_model.learn(embedding_layer)
-                train_critics.append(critic_loss)
-
+            if i >= 2000:
                 if i <= (len(train_data) // batch_size) - 100:
                     if i % 1000 == 0:
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
@@ -366,6 +364,8 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                         valid_aucs.append(auc)
 
                         torch.cuda.empty_cache()
+                critic_loss = rl_model.learn(embedding_layer)
+                train_critics.append(critic_loss)
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
@@ -413,13 +413,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_PER_V9', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--init_lr_a', type=float, default=3e-4)
+    parser.add_argument('--init_lr_a', type=float, default=1e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=3e-4)
+    parser.add_argument('--init_lr_c', type=float, default=1e-4)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=1)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)

@@ -23,7 +23,7 @@ class Memory(object):
         self.epsilon = 1e-3 # 防止出现zero priority
         self.alpha = 0.6 # 取值范围(0,1)，表示td error对priority的影响
         self.beta = 0.4 # important sample， 从初始值到1
-        self.beta_increment_per_sampling = 1e-6
+        self.beta_increment_per_sampling = 1e-5
         self.abs_err_upper = 1 # abs_err_upper和epsilon ，表明p优先级值的范围在[epsilon,abs_err_upper]之间，可以控制也可以不控制
 
         self.memory_size = memory_size
@@ -150,7 +150,7 @@ class Hybrid_Critic(nn.Module):
             nn.Linear(neuron_nums[1], 1)
         )
 
-        # self.reset_parameters()
+        self.reset_parameters()
 
     def reset_parameters(self):
         for i in range(3):
@@ -222,8 +222,8 @@ class Hybrid_Actor(nn.Module):
             if i % 2 == 0:
                 self.mlp[i].weight.data.uniform_(*hidden_init(self.mlp[i]))
 
-        self.c_action_layer[0].weight.data.uniform_(-0.003, 0.003)
-        self.d_action_layer[0].weight.data.uniform_(-0.003, 0.003)
+        # self.c_action_layer[0].weight.data.uniform_(-0.003, 0.003)
+        # self.d_action_layer[0].weight.data.uniform_(-0.003, 0.003)
 
     def act(self, input, temprature):
         obs = self.bn_input(input)
@@ -242,7 +242,7 @@ class Hybrid_Actor(nn.Module):
         d_action_q_values = self.d_action_layer(feature_exact)
 
         d_action = gumbel_softmax_sample(logits=d_action_q_values + torch.normal(d_action_q_values, 0.1).detach(),
-                                         temprature=1.0, hard=False)
+                                         temprature=temprature, hard=False)
         # print(d_action)
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
         # print(ensemble_d_actions)
@@ -424,7 +424,7 @@ class Hybrid_TD3_Model():
     def to_next_state_c_actions(self, next_d_actions, next_c_actions):
         choose_d_ = torch.argmax(next_d_actions, dim=-1) + 1
 
-        next_c_actions_with_noise = next_c_actions + torch.normal(next_c_actions, 0.2)
+        next_c_actions_with_noise = next_c_actions + torch.normal(next_c_actions, 0.1)
         sort_c_actions, sortindex_c_actions = torch.sort(-next_c_actions_with_noise, dim=-1)
 
         return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
@@ -488,7 +488,7 @@ class Hybrid_TD3_Model():
     def learn(self, embedding_layer):
         self.learn_iter += 1
 
-        if self.learn_iter % 2000 == 0:
+        if (self.learn_iter + 1) % 2000 == 0:
             self.temprature = max(np.exp(-self.anneal_rate * self.learn_iter), 0.5)
 
         # sample
@@ -504,7 +504,7 @@ class Hybrid_TD3_Model():
 
         with torch.no_grad():
             c_actions_means_next, d_actions_q_values_next = self.Hybrid_Actor_.evaluate(b_s_)
-            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next + torch.normal(d_actions_q_values_next, 0.2), temprature=self.temprature, hard=False)
+            next_d_actions = gumbel_softmax_sample(logits=d_actions_q_values_next + torch.normal(d_actions_q_values_next, 0.1), temprature=self.temprature, hard=False)
 
             next_c_actions = self.to_next_state_c_actions(next_d_actions, torch.softmax(c_actions_means_next, dim=-1))
             # print('1', next_c_actions)
@@ -546,9 +546,8 @@ class Hybrid_TD3_Model():
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
             a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means_, d_actions_q_values_)
-            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-2
+            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-3
 
-            # print(c_a_loss, c_reg, d_reg)
             self.optimizer_a.zero_grad()
             c_a_loss.backward()
             nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.5)
