@@ -67,14 +67,14 @@ class Memory(object):
             min_prob = torch.min(priorities)
             # 采样概率分布
             P = torch.div(priorities, total_p).squeeze(1).cpu().numpy()
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, replace=False)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_size, batch_size, p=P, replace=False)).long().to(self.device)
         else:
             priorities = self.get_priority(self.prioritys_[:self.memory_counter, 0:1])
             total_p = torch.sum(priorities, dim=0)
             min_prob = torch.min(priorities)
             P = torch.div(priorities, total_p).squeeze(1).cpu().numpy()
 
-            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, replace=False)).long().to(self.device)
+            sample_indexs = torch.Tensor(np.random.choice(self.memory_counter, batch_size, p=P, replace=False)).long().to(self.device)
 
         self.beta = torch.min(torch.FloatTensor([1., self.beta + self.beta_increment_per_sampling])).item()
 
@@ -128,7 +128,7 @@ class Hybrid_Critic(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [512, 256]
+        neuron_nums = [300, 200]
 
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
@@ -198,7 +198,7 @@ class Hybrid_Actor(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [512, 256]
+        neuron_nums = [300, 200]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             # nn.BatchNorm1d(neuron_nums[0]),
@@ -218,12 +218,12 @@ class Hybrid_Actor(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        # for i in range(3):
-        #     if i % 2 == 0:
-        #         self.mlp[i].weight.data.uniform_(*hidden_init(self.mlp[i]))
+        for i in range(3):
+            if i % 2 == 0:
+                self.mlp[i].weight.data.uniform_(*hidden_init(self.mlp[i]))
 
         self.c_action_layer[0].weight.data.uniform_(-0.003, 0.003)
-        # self.d_action_layer[0].weight.data.uniform_(-0.003, 0.003)
+        self.d_action_layer[0].weight.data.uniform_(-0.003, 0.003)
 
     def act(self, input, temprature):
         obs = self.bn_input(input)
@@ -242,7 +242,7 @@ class Hybrid_Actor(nn.Module):
         d_action_q_values = self.d_action_layer(feature_exact)
 
         d_action = gumbel_softmax_sample(logits=d_action_q_values + torch.normal(d_action_q_values, 0.1).detach(),
-                                         temprature=1.0, hard=True)
+                                         temprature=1.0, hard=False)
         # print(d_action)
         ensemble_d_actions = torch.argmax(d_action, dim=-1) + 1
         # print(ensemble_d_actions)
@@ -422,30 +422,66 @@ class Hybrid_TD3_Model():
             param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
     def to_next_state_c_actions(self, next_d_actions, next_c_actions):
-        choose_d_ = torch.argmax(next_d_actions, dim=-1)+ 1
+        choose_d_ = torch.argmax(next_d_actions, dim=-1) + 1
 
-        sortindex_c_actions = torch.argsort(-next_c_actions, dim=-1)
+        next_c_actions_with_noise = next_c_actions + torch.normal(next_c_actions, 0.2)
+        sort_c_actions, sortindex_c_actions = torch.sort(-next_c_actions_with_noise, dim=-1)
 
         return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
 
-        for i, choose_d in enumerate(choose_d_):
-            choose_c_actions_index = sortindex_c_actions[i, :choose_d]
-            origin_next_c_actions = next_c_actions[i, choose_c_actions_index]
-            return_c_actions[i, choose_c_actions_index] = torch.softmax(origin_next_c_actions + torch.normal(origin_next_c_actions, 0.2), dim=-1)
+        for i in range(sortindex_c_actions.size()[1]):
+            choose_d_actions_index = (choose_d_ == (i + 1)).nonzero()[:, 0]
+
+            current_choose_c_actions_index = sortindex_c_actions[choose_d_actions_index, :(i + 1)]
+
+            current_next_c_actions = torch.softmax(
+                sort_c_actions[choose_d_actions_index, :(i+1)] * -1, dim=-1
+            )
+
+            return_c_actions_temp = torch.zeros(size=[choose_d_actions_index.size()[0], sortindex_c_actions.size()[1]]).to(self.device)
+
+            # 按列取取出每一列的选择,直接将softmax后的值复制到对应位置
+            for m in range(i + 1):
+                current_choose_c_actions_index_row = current_choose_c_actions_index[:, m: m + 1]
+
+                for l in range(sortindex_c_actions.size()[1]):
+                    with_choose_index = (current_choose_c_actions_index_row == l).nonzero()[:, 0]
+                    current_next_c_actions_temp = current_next_c_actions[with_choose_index, m] # 当前列
+                    return_c_actions_temp[with_choose_index, l] = current_next_c_actions_temp
+
+            return_c_actions[choose_d_actions_index, :] = return_c_actions_temp
 
         return return_c_actions
 
-    def to_current_state_c_actions(self, next_d_actions, next_c_actions):
-        choose_d_ = torch.argmax(next_d_actions, dim=-1) + 1
-        # print(choose_d_)
-        sortindex_c_actions = torch.argsort(-next_c_actions, dim=-1)
+    def to_current_state_c_actions(self, d_actions, c_actions):
+        choose_d_ = torch.argmax(d_actions, dim=-1) + 1
+
+        sort_c_actions, sortindex_c_actions = torch.sort(-c_actions, dim=-1)
 
         return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
 
-        for i, choose_d in enumerate(choose_d_):
-            choose_c_actions_index = sortindex_c_actions[i, :choose_d]
-            origin_next_c_actions = next_c_actions[i, choose_c_actions_index]
-            return_c_actions[i, choose_c_actions_index] = torch.softmax(origin_next_c_actions, dim=-1)
+        for i in range(sortindex_c_actions.size()[1]):
+            choose_d_actions_index = (choose_d_ == (i + 1)).nonzero()[:, 0]
+
+            current_choose_c_actions_index = sortindex_c_actions[choose_d_actions_index, :(i + 1)]
+
+            current_c_actions = torch.softmax(
+                sort_c_actions[choose_d_actions_index, :(i + 1)] * -1, dim=-1
+            )
+
+            return_c_actions_temp = torch.zeros(
+                size=[choose_d_actions_index.size()[0], sortindex_c_actions.size()[1]]).to(self.device)
+
+            # 按列取取出每一列的选择,直接将softmax后的值复制到对应位置
+            for m in range(i + 1):
+                current_choose_c_actions_index_row = current_choose_c_actions_index[:, m: m + 1]
+
+                for l in range(sortindex_c_actions.size()[1]):
+                    with_choose_index = (current_choose_c_actions_index_row == l).nonzero()[:, 0]
+                    current_c_actions_temp = current_c_actions[with_choose_index, m]  # 当前列
+                    return_c_actions_temp[with_choose_index, l] = current_c_actions_temp
+
+            return_c_actions[choose_d_actions_index, :] = return_c_actions_temp
 
         return return_c_actions
 
@@ -482,7 +518,7 @@ class Hybrid_TD3_Model():
 
         critic_td_error = (q_target * 2 - q1 - q2).detach() / 2
 
-        critic_loss = ((F.mse_loss(q1, q_target, reduction='none') + F.mse_loss(q2, q_target, reduction='none'))).mean()
+        critic_loss = (ISweights * (F.mse_loss(q1, q_target, reduction='none') + F.mse_loss(q2, q_target, reduction='none'))).mean()
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()

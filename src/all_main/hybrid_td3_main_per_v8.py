@@ -108,6 +108,7 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
             ).to(device)  # 再进行softmax
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
+            current_c_actions_temp = torch.zeros(size=[len(with_action_indexs), len(model_dict)]).to(device)
 
             for m in range(i):
                 current_row_choose_models = current_choose_models[:, m:m + 1]
@@ -117,12 +118,11 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
                     choose_model_indexs = (current_row_choose_models == k).nonzero()[:, 0]
 
                     current_row_preds[choose_model_indexs, m:m + 1] = current_pretrain_y_pred[choose_model_indexs]
+                    current_c_actions_temp[choose_model_indexs, k] = current_c_actions[choose_model_indexs, m]
 
             current_y_preds = torch.sum(torch.mul(current_softmax_weights, current_row_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
 
-            current_c_actions_temp = torch.zeros(size=[len(with_action_indexs), len(model_dict)]).to(device)
-            current_c_actions_temp[:, current_choose_models] = current_c_actions[:, current_choose_models]
 
             return_c_actions[with_action_indexs, :] = current_c_actions_temp
 

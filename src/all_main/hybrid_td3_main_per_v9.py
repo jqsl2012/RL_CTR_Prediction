@@ -108,6 +108,7 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
             ).to(device)  # 再进行softmax
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
+            current_c_actions_temp = torch.zeros(size=[len(with_action_indexs), len(model_dict)]).to(device)
 
             for m in range(i):
                 current_row_choose_models = current_choose_models[:, m:m + 1]
@@ -118,11 +119,10 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
 
                     current_row_preds[choose_model_indexs, m:m + 1] = current_pretrain_y_pred[choose_model_indexs]
 
+                    current_c_actions_temp[choose_model_indexs, k] = current_softmax_weights[choose_model_indexs, m]
+
             current_y_preds = torch.sum(torch.mul(current_softmax_weights, current_row_preds), dim=1).view(-1, 1)
             y_preds[with_action_indexs, :] = current_y_preds
-
-            current_c_actions_temp = torch.zeros(size=[len(with_action_indexs), len(model_dict)]).to(device)
-            current_c_actions_temp[:, current_choose_models] = torch.softmax(current_c_actions[:, current_choose_models], dim=-1)
 
             return_c_actions[with_action_indexs, :] = current_c_actions_temp
 
@@ -344,28 +344,28 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
             if i > 2000:
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
-            #
-            #     if i <= (len(train_data) // batch_size) - 100:
-            #         if i % 1000 == 0:
-            #             auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-            #                                                  device)
-            #             print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-            #             rewards_records.append(test_rewards)
-            #             timesteps.append(i * batch_size)
-            #             valid_aucs.append(auc)
-            #
-            #             torch.cuda.empty_cache()
-            #     else:
-            #         if i % batch_size == 0:
-            #             auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
-            #                                                                       embedding_layer, test_data_loader,
-            #                                                                       device)
-            #             print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-            #             rewards_records.append(test_rewards)
-            #             timesteps.append(i * batch_size)
-            #             valid_aucs.append(auc)
-            #
-            #             torch.cuda.empty_cache()
+
+                if i <= (len(train_data) // batch_size) - 100:
+                    if i % 1000 == 0:
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
+                                                             device)
+                        print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * batch_size)
+                        valid_aucs.append(auc)
+
+                        torch.cuda.empty_cache()
+                else:
+                    if i % batch_size == 0:
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
+                                                                                  embedding_layer, test_data_loader,
+                                                                                  device)
+                        print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * batch_size)
+                        valid_aucs.append(auc)
+
+                        torch.cuda.empty_cache()
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
@@ -411,8 +411,7 @@ def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', default='../../dat'
-                                               'a/')
+    parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
     parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_PER_V9', help='LR, FM, FFM, W&D')

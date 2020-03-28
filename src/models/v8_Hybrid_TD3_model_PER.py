@@ -408,10 +408,19 @@ class Hybrid_TD3_Model():
 
         return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
 
-        for i, choose_d in enumerate(choose_d_):
-            choose_c_actions_index = sortindex_c_actions[i, :choose_d]
-            origin_next_c_actions = next_c_actions[i, choose_c_actions_index]
-            return_c_actions[i, choose_c_actions_index] = origin_next_c_actions + torch.randn_like(origin_next_c_actions) * 0.1
+        for i in range(sortindex_c_actions.size()[1]):
+            choose_d_actions_index = (choose_d_ == (i + 1)).nonzero()[:, 0]
+
+            current_choose_c_actions_index = sortindex_c_actions[choose_d_actions_index, :(i + 1)]
+
+            current_next_c_actions = next_c_actions[choose_d_actions_index, :]
+            return_c_actions_temp = torch.zeros(size=[choose_d_actions_index.size()[0], sortindex_c_actions.size()[1]]).to(self.device)
+
+            for m in range(sortindex_c_actions.size()[1]):
+                with_choose_index = (current_choose_c_actions_index == m).nonzero()[:, 0]
+                current_next_c_actions_temp = current_next_c_actions[with_choose_index, m:m+1] # 当前列
+                return_c_actions_temp[with_choose_index, m:m+1] = current_next_c_actions_temp + torch.randn_like(current_next_c_actions_temp) * 0.2
+            return_c_actions[choose_d_actions_index, :] = return_c_actions_temp
 
         return torch.clamp(return_c_actions, -2, 2)
 
@@ -422,10 +431,20 @@ class Hybrid_TD3_Model():
 
         return_c_actions = torch.zeros(size=sortindex_c_actions.size()).to(self.device)
 
-        for i, choose_d in enumerate(choose_d_):
-            choose_c_actions_index = sortindex_c_actions[i, :choose_d]
-            origin_next_c_actions = next_c_actions[i, choose_c_actions_index]
-            return_c_actions[i, choose_c_actions_index] = origin_next_c_actions
+        for i in range(sortindex_c_actions.size()[1]):
+            choose_d_actions_index = (choose_d_ == (i + 1)).nonzero()[:, 0]
+
+            current_choose_c_actions_index = sortindex_c_actions[choose_d_actions_index, :(i + 1)]
+
+            current_next_c_actions = next_c_actions[choose_d_actions_index, :]
+            return_c_actions_temp = torch.zeros(size=[choose_d_actions_index.size()[0], sortindex_c_actions.size()[1]]).to(self.device)
+
+            for m in range(sortindex_c_actions.size()[1]):
+                with_choose_index = (current_choose_c_actions_index == m).nonzero()[:, 0]
+                current_next_c_actions_temp = current_next_c_actions[with_choose_index, m:m+1] # 当前列
+                return_c_actions_temp[with_choose_index, m:m+1] = current_next_c_actions_temp
+
+            return_c_actions[choose_d_actions_index, :] = return_c_actions_temp
 
         return torch.clamp(return_c_actions, -2, 2)
 
@@ -477,7 +496,7 @@ class Hybrid_TD3_Model():
             c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
             d_actions_q_values_ = gumbel_softmax_sample(logits=d_actions_q_values, temprature=0.01, hard=False)
             c_actions_means_ = self.to_current_state_c_actions(d_actions_q_values_, c_actions_means)
-            print(c_actions_means_)
+
             # Hybrid_Actor
             # c_action_softmax = torch.softmax(c_actions_means, dim=-1)
             # d_action_softmax = torch.softmax(d_actions_q_values, dim=-1)
@@ -487,7 +506,7 @@ class Hybrid_TD3_Model():
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
             a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means_, d_actions_q_values_)
-            c_a_loss = -a_critic_value.mean()
+            c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-2
 
             # print(c_a_loss, c_reg, d_reg)
             self.optimizer_a.zero_grad()
