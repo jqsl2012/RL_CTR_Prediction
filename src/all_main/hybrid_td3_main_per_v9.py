@@ -26,10 +26,11 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size, memory_size, device, campaign_id):
+def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, data_len, train_batch_size, memory_size, device, campaign_id):
     RL_model = td3_model.Hybrid_TD3_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums, lr_C_A=init_lr_a, lr_D_A=init_lr_a, lr_C=init_lr_c,
-                                               campaign_id=campaign_id, batch_size=256,
+                                               data_len=data_len, train_batch_size=train_batch_size,
+                                               campaign_id=campaign_id,
                                                memory_size=memory_size, device=device)
     return RL_model
 
@@ -127,14 +128,14 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
             return_c_actions[with_action_indexs, :] = current_c_actions_temp
 
         with_clk_rewards = torch.where(
-            current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
+            current_y_preds[current_with_clk_indexs] > current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_with_clk_indexs] * 1,
             current_basic_rewards[current_with_clk_indexs] * 0
         )
 
         without_clk_rewards = torch.where(
-            current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
+            current_y_preds[current_without_clk_indexs] < current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_without_clk_indexs] * 1,
             current_basic_rewards[current_without_clk_indexs] * 0
@@ -287,7 +288,11 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     model_dict_len = len(model_dict)
 
     memory_size = 1000000
-    rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
+
+    data_len = len(train_data)
+    train_batch_size = batch_size
+
+    rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, data_len, train_batch_size,
                                               memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
@@ -346,7 +351,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                 if i <= (len(train_data) // batch_size) - 100:
                     if i % 1000 == 0:
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-                                                             device)
+                                                         device)
                         print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
                         rewards_records.append(test_rewards)
                         timesteps.append(i * batch_size)
@@ -355,15 +360,15 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
                         torch.cuda.empty_cache()
                 else:
                     if i % batch_size == 0:
-                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
-                                                                                  embedding_layer, test_data_loader,
-                                                                                  device)
-                        print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-                        rewards_records.append(test_rewards)
-                        timesteps.append(i * batch_size)
-                        valid_aucs.append(auc)
+                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
+                                                                                   embedding_layer, test_data_loader,
+                                                                                   device)
+                         print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+                         rewards_records.append(test_rewards)
+                         timesteps.append(i * batch_size)
+                         valid_aucs.append(auc)
 
-                        torch.cuda.empty_cache()
+                        # torch.cuda.empty_cache()
                 critic_loss = rl_model.learn(embedding_layer)
                 train_critics.append(critic_loss)
 
@@ -413,13 +418,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3386/', help='1458, 3386')
+    parser.add_argument('--campaign_id', default='3476/', help='1458, 3386')
     parser.add_argument('--model_name', default='Hybrid_TD3_PER_V9', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
-    parser.add_argument('--init_lr_a', type=float, default=1e-4)
+    parser.add_argument('--init_lr_a', type=float, default=3e-4)
     parser.add_argument('--end_lr_a', type=float, default=1e-4)
-    parser.add_argument('--init_lr_c', type=float, default=1e-4)
+    parser.add_argument('--init_lr_c', type=float, default=3e-4)
     parser.add_argument('--end_lr_c', type=float, default=3e-4)
     parser.add_argument('--init_exploration_rate', type=float, default=1)
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
