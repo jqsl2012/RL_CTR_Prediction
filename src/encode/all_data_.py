@@ -20,24 +20,29 @@ def to_libsvm_encode(datapath):
     new_test_file = datapath + 'test_.txt'
 
     train_list = list()
-    for line in open(train_encode):
-        train_list.append(line.strip().replace(':1', '').split(' '))
+    with open(new_train_file, 'w') as new_train_f_out:
+        for line in open(train_encode):
+            # print(line.strip().replace(':1', '').replace('\t', ','))
+            new_train_f_out.write(line.strip().replace(':1', '').replace('\t', ',') + '\n')
+            # train_list.append(line.strip().replace(':1', '').split(' '))
 
-    new_train_encode = pd.DataFrame(data=np.array(train_list).astype(int))
-    new_train_encode.to_csv(new_train_file, header=None, index=None)
+    # new_train_encode = pd.DataFrame(data=np.array(train_list).astype(int))
+    # new_train_encode.to_csv(new_train_file, header=None, index=None)
 
     test_list = list()
-    for line in open(test_encode):
-        test_list.append(line.strip().replace(':1', '').split(' '))
+    with open(new_test_file, 'w') as new_test_f_out:
+        for line in open(test_encode):
+            new_test_f_out.write(line.strip().replace(':1', '').replace('\t', ',') + '\n')
+            # test_list.append(line.strip().replace(':1', '').split(' '))
 
-    new_test_encode = pd.DataFrame(data=np.array(test_list).astype(int))
-    new_test_encode.to_csv(new_test_file, header=None, index=None)
+    # new_test_encode = pd.
+            # (new_test_file, header=None, index=None)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
-    parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3476/', help='1458, 3386, 3358, 3427, 3476')
+    parser.add_argument('--dataset_name', default='avazu/', help='ipinyou, cretio, yoyi, avazu')
+    parser.add_argument('--campaign_id', default='avazu/', help='1458, 3386, 3358, 3427, 3476, avazu')
     parser.add_argument('--is_to_csv', default=False)
     parser.add_argument('--is_separate_data', default=True)
 

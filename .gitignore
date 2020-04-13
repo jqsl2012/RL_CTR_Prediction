@@ -1,5 +1,6 @@
 ##ignor these files##
 /data/ipinyou/
+/data/avazu/
 .idea
 /__pycache__/
 /src/__pycache__/
