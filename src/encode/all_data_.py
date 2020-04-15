@@ -7,6 +7,7 @@ import argparse
 import pandas as pd
 import numpy as np
 import os
+
 '''
  按照原始数据集划分
 '''
@@ -14,26 +15,34 @@ import os
 def to_libsvm_encode(datapath):
     print('###### to libsvm encode ######\n')
     train_encode = datapath + 'train.txt'
-    new_train_file = datapath + 'train_.txt'
+    new_train_file = datapath + 'train_1.txt'
 
     test_encode = datapath + 'test.txt'
     new_test_file = datapath + 'test_.txt'
 
-    train_list = list()
-    with open(new_train_file, 'w') as new_train_f_out:
-        for line in open(train_encode):
-            # print(line.strip().replace(':1', '').replace('\t', ','))
-            new_train_f_out.write(line.strip().replace(':1', '').replace('\t', ',') + '\n')
-            # train_list.append(line.strip().replace(':1', '').split(' '))
+    # train_list = list()
+    # with open(new_train_file, 'w') as new_train_f_out:
+    #     for line in open(train_encode):
+    #         # print(line.strip().replace(':1', '').replace('\t', ','))
+    #         new_train_f_out.write(line.strip().replace(':1', '').replace('\t', ',') + '\n')
+    #         # train_list.append(line.strip().replace(':1', '').split(' '))
 
     # new_train_encode = pd.DataFrame(data=np.array(train_list).astype(int))
     # new_train_encode.to_csv(new_train_file, header=None, index=None)
 
-    test_list = list()
-    with open(new_test_file, 'w') as new_test_f_out:
-        for line in open(test_encode):
-            new_test_f_out.write(line.strip().replace(':1', '').replace('\t', ',') + '\n')
-            # test_list.append(line.strip().replace(':1', '').split(' '))
+    # test_list = list()
+    # with open(new_test_file, 'w') as new_test_f_out:
+    #     for line in open(test_encode):
+    #         new_test_f_out.write(line.strip().replace(':1', '').replace('\t', ',') + '\n')
+    #         # test_list.append(line.strip().replace(':1', '').split(' '))
+
+    train_data = pd.read_csv(new_train_file, header=None).astype(int)
+    idx = np.random.permutation(len(train_data))
+    shuffle_train_data = train_data.iloc[idx, :]
+
+    shuffle_train_data.to_csv(data_path + 'train_.txt', header=None, index=None)
+
+    os.remove(new_train_file)
 
     # new_test_encode = pd.
             # (new_test_file, header=None, index=None)

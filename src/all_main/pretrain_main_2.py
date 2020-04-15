@@ -58,18 +58,18 @@ def get_dataset(datapath, dataset_name, campaign_id):
     feature_index = pd.read_csv(data_path + feature_index_name, header=None).values
     feature_nums = int(feature_index[-1, 0].split('\t')[1]) + 1 # 特征数量
 
-    train_data = train_fm
+    train_data = torch.LongTensor(train_fm)
     test_data = test_fm
 
     return train_fm, train_data, test_data, field_nums, feature_nums
 
 
-def train(model, optimizer, data_loader, loss, device):
+def train(model, optimizer, train_data, loss, device, len_train, batch):
     model.train()  # 转换为训练模式
     total_loss = 0
     log_intervals = 0
-    for i, (features, labels) in enumerate(tqdm.tqdm(data_loader, smoothing=0, mininterval=1.0) ):
-        features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+    for i in tqdm.tqdm(range(0, len_train, batch), smoothing=0, mininterval=1.0):
+        features, labels = train_data[i:i+batch, 1:].to(device), train_data[i:i+batch, 0].unsqueeze(1).to(device)
         y = model(features)
         train_loss = loss(y, labels.float())
 
@@ -124,10 +124,10 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
     device = torch.device(device)  # 指定运行设备
     train_fm, train_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id)
 
-    train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
+    # train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
     test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8)
+    # train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, num_workers=8)
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
     model = get_model(model_name, feature_nums, field_nums, latent_dims).to(device)
@@ -152,7 +152,7 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name, epoch, l
         # learning_rate += 1e-4
         optimizer = torch.optim.Adam(params=model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-        train_average_loss = train(model, optimizer, train_data_loader, loss, device)
+        train_average_loss = train(model, optimizer, train_data, loss, device, len(train_fm), batch_size)
 
         torch.save(model.state_dict(), save_param_dir + campaign_id + model_name + str(np.mod(epoch_i, 5)) + '.pth')
 
@@ -222,7 +222,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path', default='../../data/')
     parser.add_argument('--dataset_name', default='avazu/', help='ipinyou, cretio, yoyi, avazu')
     parser.add_argument('--campaign_id', default='avazu/', help='1458, 3358, 3386, 3427, 3476, avazu')
-    parser.add_argument('--model_name', default='AFM', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
+    parser.add_argument('--model_name', default='IPNN', help='LR, FM, FFM, W&D, FNN, DeepFM, IPNN, OPNN, DCN, AFM')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=20)
     parser.add_argument('--learning_rate', type=float, default=1e-3)

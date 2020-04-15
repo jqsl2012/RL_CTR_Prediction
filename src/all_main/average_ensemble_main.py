@@ -69,15 +69,15 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
 
     test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, num_workers=8)
 
-    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretrain_params)
-    FFM.eval()
-
-    LR = p_model.LR(feature_nums)
-    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
-    LR.load_state_dict(LR_pretrain_params)
-    LR.eval()
+    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    # FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    # FFM.load_state_dict(FFM_pretrain_params)
+    # FFM.eval()
+    #
+    # LR = p_model.LR(feature_nums)
+    # LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    # LR.load_state_dict(LR_pretrain_params)
+    # LR.eval()
 
     FM = p_model.FM(feature_nums, latent_dims)
     FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
@@ -141,10 +141,10 @@ def main(data_path, dataset_name, campaign_id, latent_dims, batch_size, device, 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path', default='../../data/')
-    parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3476/', help='1458, 3386')
+    parser.add_argument('--dataset_name', default='avazu/', help='ipinyou, cretio, avazu')
+    parser.add_argument('--campaign_id', default='avazu/', help='1458, 3386')
     parser.add_argument('--latent_dims', default=10)
-    parser.add_argument('--batch_size', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=4096)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
