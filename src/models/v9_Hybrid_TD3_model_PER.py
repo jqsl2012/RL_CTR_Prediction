@@ -128,7 +128,7 @@ class Hybrid_Critic(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [300, 200]
+        neuron_nums = [512, 256]
 
         self.mlp_1 = nn.Sequential(
             nn.Linear(deep_input_dims, neuron_nums[0]),
@@ -198,7 +198,7 @@ class Hybrid_Actor(nn.Module):
         self.bn_input.weight.data.fill_(1)
         self.bn_input.bias.data.fill_(0)
 
-        neuron_nums = [300, 200]
+        neuron_nums = [512, 256]
         self.mlp = nn.Sequential(
             nn.Linear(self.input_dims, neuron_nums[0]),
             # nn.BatchNorm1d(neuron_nums[0]),
@@ -414,7 +414,7 @@ class Hybrid_TD3_Model():
         ensemble_c_actions = torch.softmax(c_action_means, dim=-1)
         # ensemble_c_actions = boltzmann_softmax(c_action_means, self.temprature)
 
-        ensemble_d_actions = gumbel_softmax_sample(d_q_values, temprature=1.0, hard=False)
+        ensemble_d_actions = gumbel_softmax_sample(d_q_values, temprature=self.temprature_min, hard=True)
         ensemble_d_actions = torch.argmax(ensemble_d_actions, dim=-1) + 1
 
         return ensemble_d_actions.view(-1, 1), ensemble_c_actions, ensemble_c_actions
@@ -490,9 +490,9 @@ class Hybrid_TD3_Model():
     def learn(self, embedding_layer):
         self.learn_iter += 1
 
-        # if (self.learn_iter + 1) % 1000 == 0:
-        #     # self.temprature = max(np.exp(-self.anneal_rate * self.learn_iter), 0.5)
-        #     self.temprature = max(self.temprature_min, self.temprature - (self.temprature - self.temprature_min) * self.learn_iter / (self.data_len // self.train_batch_size))
+        if (self.learn_iter + 1) % 1000 == 0:
+            # self.temprature = max(np.exp(-self.anneal_rate * self.learn_iter), 0.5)
+            self.temprature = max(self.temprature_min, self.temprature - (self.temprature - self.temprature_min) * self.learn_iter / (self.data_len // self.train_batch_size))
 
         # sample
         choose_idx, batch_memory, ISweights = self.memory.stochastic_sample(self.batch_size)
@@ -529,7 +529,7 @@ class Hybrid_TD3_Model():
 
         self.optimizer_c.zero_grad()
         critic_loss.backward()
-        # nn.utils.clip_grad_norm_(self.Hybrid_Critic.parameters(), 0.5)
+        nn.utils.clip_grad_norm_(self.Hybrid_Critic.parameters(), 0.5)
         self.optimizer_c.step()
 
         critic_loss_r = critic_loss.item()
@@ -539,7 +539,7 @@ class Hybrid_TD3_Model():
         if self.learn_iter % self.policy_freq == 0:
             c_actions_means, d_actions_q_values = self.Hybrid_Actor.evaluate(b_s)
             #print(d_actions_q_values)
-            d_actions_q_values_ = gumbel_softmax_sample(logits=d_actions_q_values, temprature=1.0, hard=False)
+            d_actions_q_values_ = gumbel_softmax_sample(logits=d_actions_q_values, temprature=self.temprature_min, hard=False)
             c_actions_means_ = self.to_current_state_c_actions(d_actions_q_values_, c_actions_means)
             # c_actions_means_ = torch.softmax(c_actions_means, dim=-1)
             # print('2', c_actions_means_)
@@ -549,20 +549,21 @@ class Hybrid_TD3_Model():
             # Hybrid_Actor
             # c_action_softmax = torch.softmax(c_actions_means, dim=-1)
             # d_action_softmax = torch.softmax(d_actions_q_values, dim=-1)
-            # c_reg = -(c_action_softmax.log().mean())
-            # d_reg = -(d_action_softmax.log().mean())
+            # c_reg = -(c_actions_means_.log().mean())
+            # d_reg = -(d_actions_q_values_.log().mean())
 
             c_reg = (c_actions_means ** 2).mean()
             d_reg = (d_actions_q_values ** 2).mean()
+            # print(c_reg, d_reg)
 
             # print(d_actions_q_values_, c_actions_means_)
             a_critic_value = self.Hybrid_Critic.evaluate_q_1(b_s, c_actions_means_, d_actions_q_values_)
             # c_a_loss = -a_critic_value.mean() + (c_reg + d_reg) * 1e-3
-            c_a_loss = (ISweights * ( - a_critic_value)).mean() + (c_reg + d_reg) * 1e-3
+            c_a_loss = (ISweights * ( - a_critic_value)).mean() + (c_reg + d_reg) * 1e-2
             # print(d_reg)
             self.optimizer_a.zero_grad()
             c_a_loss.backward()
-            # nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.5)
+            nn.utils.clip_grad_norm_(self.Hybrid_Actor.parameters(), 0.5)
             self.optimizer_a.step()
 
             # for name, parms in self.Hybrid_Actor.d_action_layer.named_parameters():

@@ -7,9 +7,10 @@ import argparse
 import random
 from sklearn.metrics import roc_auc_score
 import src.models.p_model as p_model
-import src.models.v8_Hybrid_TD3_model_PER as td3_model
+import src.models.v10_Hybrid_TD3_model_PER as td3_model
 import src.models.creat_data as Data
 from src.models.Feature_embedding import Feature_Embedding
+from itertools import islice
 
 import torch
 import torch.nn as nn
@@ -26,39 +27,40 @@ def setup_seed(seed):
     torch.backends.cudnn.deterministic = True
 
 
-def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size, memory_size, device, campaign_id):
+def get_model(action_nums, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, data_len, train_batch_size, memory_size, device, campaign_id):
     RL_model = td3_model.Hybrid_TD3_Model(feature_nums, field_nums, latent_dims,
                                                action_nums=action_nums, lr_C_A=init_lr_a, lr_D_A=init_lr_a, lr_C=init_lr_c,
-                                               campaign_id=campaign_id, batch_size=256,
+                                               data_len=data_len, train_batch_size=train_batch_size,
+                                               campaign_id=campaign_id,
                                                memory_size=memory_size, device=device)
     return RL_model
 
 
 def get_dataset(datapath, dataset_name, campaign_id):
     data_path = datapath + dataset_name + campaign_id
-    train_data_file_name = 'train_.txt'
-    train_fm = pd.read_csv(data_path + train_data_file_name, header=None).values.astype(int)
 
     test_data_file_name = 'test_.txt'
     test_fm = pd.read_csv(data_path + test_data_file_name, header=None).values.astype(int)
-
-    field_nums = len(train_fm[0, 1:])  # 特征域的数量
+    field_nums = len(test_fm[0, 1:])  # 特征域的数量
 
     feature_index_name = 'featindex.txt'
     feature_index = pd.read_csv(data_path + feature_index_name, header=None).values
     feature_nums = int(feature_index[-1, 0].split('\t')[1]) + 1  # 特征数量
 
-    train_data = train_fm
     test_data = test_fm
 
-    return train_fm, train_data, test_data, field_nums, feature_nums
+    return test_data, field_nums, feature_nums
 
 def generate_preds(model_dict, features, actions, prob_weights, c_actions,
                    labels, device, mode):
     y_preds = torch.ones(size=[len(features), 1]).to(device)
     rewards = torch.ones(size=[len(features), 1]).to(device)
 
+    # if mode == 'test':
+    #     print(c_actions)
+
     sort_prob_weights, sortindex_prob_weights = torch.sort(-prob_weights, dim=1)
+    sort_c_actions, sortindex_c_actions = torch.sort(-c_actions, dim=1)
 
     pretrain_model_len = len(model_dict)  # 有多少个预训练模型
 
@@ -69,6 +71,7 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
     return_c_actions = torch.zeros(size=(len(features), len(model_dict))).to(device)
 
     choose_model_lens = range(1, pretrain_model_len + 1)
+    # print(actions)
     for i in choose_model_lens:  # 根据ddqn_model的action,判断要选择ensemble的数量
         with_action_indexs = (actions == i).nonzero()[:, 0]
         current_choose_models = sortindex_prob_weights[with_action_indexs][:, :i]
@@ -85,26 +88,26 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
         current_c_actions = c_actions[with_action_indexs, :]
         if i == pretrain_model_len:
             current_y_preds = torch.sum(torch.mul(current_prob_weights, current_pretrain_y_preds), dim=1).view(-1, 1)
+            # print(current_prob_weights)
+            # print(current_pretrain_y_preds)
             y_preds[with_action_indexs, :] = current_y_preds
+            # print(current_y_preds)
+            # print(y_preds[with_action_indexs, :])
 
             return_c_actions[with_action_indexs, :] = current_c_actions
-        elif i == 1:
-            current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
-            current_c_actions_temp = torch.zeros(size=[len(with_action_indexs), len(model_dict)]).to(device)
-            for k in range(pretrain_model_len):
-                choose_model_indexs = (current_choose_models == k).nonzero()[:, 0] # 找出下标
-                current_y_preds[choose_model_indexs, 0] = current_pretrain_y_preds[choose_model_indexs, k]
-
-                current_c_actions_temp[choose_model_indexs, k] = current_c_actions[choose_model_indexs, k]
-            y_preds[with_action_indexs, :] = current_y_preds
-            return_c_actions[with_action_indexs, :] = current_c_actions_temp
+        # elif i == 1:
+        #     current_y_preds = torch.ones(size=[len(with_action_indexs), 1]).to(device)
+        #     current_c_actions_temp = torch.zeros(size=[len(with_action_indexs), len(model_dict)]).to(device)
+        #     for k in range(pretrain_model_len):
+        #         choose_model_indexs = (current_choose_models == k).nonzero()[:, 0] # 找出下标
+        #         current_y_preds[choose_model_indexs, 0] = current_pretrain_y_preds[choose_model_indexs, k]
+        #
+        #         current_c_actions_temp[choose_model_indexs, k] = current_c_actions[choose_model_indexs, k]
+        #     y_preds[with_action_indexs, :] = current_y_preds
+        #     return_c_actions[with_action_indexs, :] = current_c_actions_temp
         else:
-            current_pretrain_y_preds = torch.cat([
-                pretrain_y_preds[l][with_action_indexs] for l in range(pretrain_model_len)
-            ], dim=1)
-
             current_softmax_weights = torch.softmax(
-                sort_prob_weights[with_action_indexs][:, :i] * -1, dim=1
+                sort_c_actions[with_action_indexs][:, :i] * -1, dim=1
             ).to(device)  # 再进行softmax
 
             current_row_preds = torch.ones(size=[len(with_action_indexs), i]).to(device)
@@ -118,23 +121,24 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
                     choose_model_indexs = (current_row_choose_models == k).nonzero()[:, 0]
 
                     current_row_preds[choose_model_indexs, m:m + 1] = current_pretrain_y_pred[choose_model_indexs]
-                    current_c_actions_temp[choose_model_indexs, k] = current_c_actions[choose_model_indexs, m]
+
+                    current_c_actions_temp[choose_model_indexs, k] = sort_c_actions[choose_model_indexs, m] * -1
 
             current_y_preds = torch.sum(torch.mul(current_softmax_weights, current_row_preds), dim=1).view(-1, 1)
-            y_preds[with_action_indexs, :] = current_y_preds
 
+            y_preds[with_action_indexs, :] = current_y_preds
 
             return_c_actions[with_action_indexs, :] = current_c_actions_temp
 
         with_clk_rewards = torch.where(
-            current_y_preds[current_with_clk_indexs] >= current_pretrain_y_preds[
+            current_y_preds[current_with_clk_indexs] > current_pretrain_y_preds[
                 current_with_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_with_clk_indexs] * 1,
             current_basic_rewards[current_with_clk_indexs] * 0
         )
 
         without_clk_rewards = torch.where(
-            current_y_preds[current_without_clk_indexs] <= current_pretrain_y_preds[
+            current_y_preds[current_without_clk_indexs] < current_pretrain_y_preds[
                 current_without_clk_indexs].mean(dim=1).view(-1, 1),
             current_basic_rewards[current_without_clk_indexs] * 1,
             current_basic_rewards[current_without_clk_indexs] * 0
@@ -160,7 +164,7 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
     return y_preds, rewards, return_c_actions
 
 
-def test(rl_model, model_dict, embedding_layer, data_loader, device):
+def test(rl_model, model_dict, embedding_layer, test_file, test_lens, device):
     targets, predicts = list(), list()
     intervals = 0
     total_test_loss = 0
@@ -168,24 +172,35 @@ def test(rl_model, model_dict, embedding_layer, data_loader, device):
     final_actions = torch.LongTensor().to(device)
     final_prob_weights = torch.FloatTensor().to(device)
     with torch.no_grad():
-        for i, (features, labels) in enumerate(data_loader):
-            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+        batch_iter_lens = 0
+        with open(test_file) as test_f:
+            for i in range(0, test_lens, 4096):
+                terminal_i = min(test_lens - batch_iter_lens, 4096)
 
-            embedding_vectors = embedding_layer.forward(features)
+                lines = list(islice(test_f, 0, terminal_i)) # 获取迭代器结果的切片，需要注意的是它会消耗迭代器,也就是已迭代的数据会被丢弃
+                batch_iter_lens += 4096
 
-            actions, prob_weights, c_actions = rl_model.choose_best_action(embedding_vectors)
-            # print(actions, prob_weights)
-            y, rewards, return_c_actions = generate_preds(model_dict, features, actions, prob_weights, c_actions,
-                                                          labels, device, mode='test')
+                items = torch.LongTensor(
+                    np.array(list(map(map_f, lines))).astype(int))  # map函数将list中每一个item都映射至function中
 
-            targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
-            predicts.extend(y.tolist())
-            intervals += 1
+                features, labels = items[:, 1:].to(device), torch.unsqueeze(items[:, 0], 1).to(device)
 
-            test_rewards = torch.cat([test_rewards, rewards], dim=0)
+                embedding_vectors = embedding_layer.forward(features)
 
-            final_actions = torch.cat([final_actions, actions], dim=0)
-            final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
+                actions, c_actions, prob_weights = rl_model.choose_best_action(embedding_vectors)
+                # print(actions, prob_weights)
+                # print(torch.sum(prob_weights, dim=-1))
+                y, rewards, return_c_actions = generate_preds(model_dict, features, actions, prob_weights, c_actions,
+                                                              labels, device, mode='test')
+
+                targets.extend(labels.tolist())  # extend() 函数用于在列表末尾一次性追加另一个序列中的多个值（用新列表扩展原来的列表）。
+                predicts.extend(y.tolist())
+                intervals += 1
+
+                test_rewards = torch.cat([test_rewards, rewards], dim=0)
+
+                final_actions = torch.cat([final_actions, actions], dim=0)
+                final_prob_weights = torch.cat([final_prob_weights, prob_weights], dim=0)
 
     return roc_auc_score(targets, predicts), predicts, test_rewards.mean().item(), final_actions, final_prob_weights
 
@@ -213,6 +228,8 @@ def submission(rl_model, model_dict, embedding_layer, data_loader, device):
 
     return predicts, roc_auc_score(targets, predicts), final_actions.cpu().numpy(), final_prob_weights.cpu().numpy()
 
+def map_f(line):
+    return line.strip().split(',')
 
 def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
          init_lr_a, end_lr_a, init_lr_c, end_lr_c, init_exploration_rate, end_exploration_rate,
@@ -220,25 +237,35 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     if not os.path.exists(save_param_dir):
         os.mkdir(save_param_dir)
 
+    if not os.path.exists(save_param_dir + campaign_id + model_name):
+        os.mkdir(save_param_dir + campaign_id + model_name)
+
     device = torch.device(device)  # 指定运行设备
-    train_fm, train_data, test_data, field_nums, feature_nums = get_dataset(data_path, dataset_name, campaign_id)
+    train_lens = 33689329
+    test_lens = 6739638
 
-    train_dataset = Data.libsvm_dataset(train_data[:, 1:], train_data[:, 0])
-    test_dataset = Data.libsvm_dataset(test_data[:, 1:], test_data[:, 0])
+    train_file = data_path + dataset_name + campaign_id + 'train_.txt'
+    test_file = data_path + dataset_name + campaign_id + 'test_.txt'
 
-    train_data_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size,
-                                                    num_workers=8, shuffle=1)  # 0.7153541503790021
-    test_data_loader = torch.utils.data.DataLoader(test_dataset, batch_size=4096, num_workers=8)
+    field_nums = 0
+    for i, line in enumerate(open(train_file, 'r')):
+        if i == 0:
+            field_nums = len(line.strip().split(',')) - 1
+            break
 
-    FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
-    FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
-    FFM.load_state_dict(FFM_pretrain_params)
-    FFM.eval()
+    feature_index_name = 'featindex.txt'
+    feature_index = pd.read_csv(data_path + dataset_name + campaign_id + feature_index_name, header=None).values
+    feature_nums = int(feature_index[-1, 0].split('\t')[1]) + 1  # 特征数量
 
-    LR = p_model.LR(feature_nums)
-    LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
-    LR.load_state_dict(LR_pretrain_params)
-    LR.eval()
+    # FFM = p_model.FFM(feature_nums, field_nums, latent_dims)
+    # FFM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FFMbest.pth')
+    # FFM.load_state_dict(FFM_pretrain_params)
+    # FFM.eval()
+    #
+    # LR = p_model.LR(feature_nums)
+    # LR_pretrain_params = torch.load(save_param_dir + campaign_id + 'LRbest.pth')
+    # LR.load_state_dict(LR_pretrain_params)
+    # LR.eval()
 
     FM = p_model.FM(feature_nums, latent_dims)
     FM_pretrain_params = torch.load(save_param_dir + campaign_id + 'FMbest.pth')
@@ -281,12 +308,15 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
     DCN.eval()
 
     # model_dict = {0: LR.to(device), 1: FM.to(device), 2: FFM.to(device)}
-    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: AFM.to(device)}
+    model_dict = {0: WandD.to(device), 1: FNN.to(device), 2: IPNN.to(device), 3: DCN.to(device), 4: FM.to(device)}
 
     model_dict_len = len(model_dict)
 
     memory_size = 1000000
-    rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, batch_size,
+
+    train_batch_size = batch_size
+
+    rl_model = get_model(model_dict_len, feature_nums, field_nums, latent_dims, init_lr_a, init_lr_c, train_lens, train_batch_size,
                                               memory_size, device, campaign_id)
 
     embedding_layer = Feature_Embedding(feature_nums, field_nums, latent_dims).to(device)
@@ -310,62 +340,85 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
         train_start_time = datetime.datetime.now()
 
-        for i, (features, labels) in enumerate(tqdm.tqdm(train_data_loader, smoothing=0, mininterval=1.0)):
-            features, labels = features.long().to(device), torch.unsqueeze(labels, 1).to(device)
+        batch_iter_lens = 0
+        with open(train_file) as train_f:
+            for i in tqdm.tqdm(range(0, train_lens, batch_size), smoothing=0.0, mininterval=1.0):
+                terminal_i = min(train_lens - batch_iter_lens, batch_size)
 
-            embedding_vectors = embedding_layer.forward(features)
+                lines = list(islice(train_f, 0, terminal_i)) # 获取迭代器结果的切片，需要注意的是它会消耗迭代器,也就是已迭代的数据会被丢弃
+                batch_iter_lens += batch_size
 
-            if i < 200:
-                c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
-                    embedding_vectors, True)
-            else:
-                c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
-                    embedding_vectors, False)
+                items = torch.LongTensor(np.array(list(map(map_f, lines))).astype(int)) # map函数将list中每一个item都映射至function中
 
-            y_preds, rewards, return_c_actions = \
-                generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, c_actions, labels, device,
-                               mode='train')
+                features, labels = items[:, 1:].to(device), torch.unsqueeze(items[:, 0], 1).to(device)
 
-            transitions = torch.cat([features.float(), return_c_actions, d_q_values, ensemble_d_actions.float(), rewards],
-                                    dim=1)
+                embedding_vectors = embedding_layer.forward(features)
 
-            rl_model.store_transition(transitions)
+                if i // batch_size < 1000:
+                    c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
+                        embedding_vectors, True)
+                else:
+                    c_actions, ensemble_c_actions, d_q_values, ensemble_d_actions = rl_model.choose_action(
+                        embedding_vectors, False)
 
-            # if i == 2000:
-            #     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
-            #                                                               test_data_loader,
-            #                                                               device)
-            #     print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
-            #     rewards_records.append(test_rewards)
-            #     timesteps.append(i)
-            #     valid_aucs.append(auc)
+                y_preds, rewards, return_c_actions = \
+                    generate_preds(model_dict, features, ensemble_d_actions, ensemble_c_actions, c_actions, labels, device,
+                                   mode='train')
 
-                # torch.cuda.empty_cache()
-            if i >= 200:
-                critic_loss = rl_model.learn(embedding_layer)
-                train_critics.append(critic_loss)
-            #
-            #     if i <= (len(train_data) // batch_size) - 100:
-            #         if i % 1000 == 0:
-            #             auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer, test_data_loader,
-            #                                                  device)
-            #             print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-            #             rewards_records.append(test_rewards)
-            #             timesteps.append(i * batch_size)
-            #             valid_aucs.append(auc)
-            #
-            #             torch.cuda.empty_cache()
-            #     else:
-            #         if i % batch_size == 0:
-            #             auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
-            #                                                                       embedding_layer, test_data_loader,
-            #                                                                       device)
-            #             print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
-            #             rewards_records.append(test_rewards)
-            #             timesteps.append(i * batch_size)
-            #             valid_aucs.append(auc)
-            #
-            #             torch.cuda.empty_cache()
+                transitions = torch.cat([features.float(), return_c_actions, d_q_values, ensemble_d_actions.float(), rewards],
+                                        dim=1)
+
+                rl_model.store_transition(transitions)
+
+                if i // batch_size >= 1000:
+
+                    # if i >= batch_size * 2000:
+                    # #     if i <= (train_lens // batch_size) - 100:
+                    if i // batch_size == 1000:
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                                  test_file, test_lens,
+                                                                                  device)
+                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * batch_size)
+                        valid_aucs.append(auc)
+
+                        torch.cuda.empty_cache()
+
+                    elif (i // batch_size) % 5000 == 0:
+                        # torch.save(rl_model.Hybrid_Actor.state_dict(),
+                        #            save_param_dir + campaign_id + model_name + '/' + str(i // batch_size) + '_' + '.pth')
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                                  test_file, test_lens,
+                                                                                  device)
+                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * batch_size)
+                        valid_aucs.append(auc)
+
+                        torch.cuda.empty_cache()
+                        # else:
+                        #     if i % batch_size == 0:
+                        #          auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict,
+                        #                                                                    embedding_layer, test_data_loader,
+                        #                                                                    device)
+                        #          print('timesteps', i * batch_size, 'test_auc', auc, 'test_rewards', test_rewards)
+                        #          rewards_records.append(test_rewards)
+                        #          timesteps.append(i * batch_size)
+                        #          valid_aucs.append(auc)
+                    critic_loss = rl_model.learn(embedding_layer)
+                    train_critics.append(critic_loss)
+
+                if train_lens - i <= batch_size:
+                    auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                              test_file, test_lens,
+                                                                              device)
+                    print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+                    rewards_records.append(test_rewards)
+                    timesteps.append(i)
+                    valid_aucs.append(auc)
+
+                    torch.cuda.empty_cache()
 
         print(rl_model.temprature)
         train_end_time = datetime.datetime.now()
@@ -411,11 +464,10 @@ def eva_stopping(valid_aucs, valid_losses, type):  # early stopping
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_path', default='../../dat'
-                                               'a/')
-    parser.add_argument('--dataset_name', default='ipinyou/', help='ipinyou, cretio, yoyi')
-    parser.add_argument('--campaign_id', default='3358/', help='1458, 3386')
-    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V9', help='LR, FM, FFM, W&D')
+    parser.add_argument('--data_path', default='../../data/')
+    parser.add_argument('--dataset_name', default='avazu/', help='ipinyou, cretio, yoyi')
+    parser.add_argument('--campaign_id', default='avazu/', help='1458, 3386')
+    parser.add_argument('--model_name', default='Hybrid_TD3_PER_V10', help='LR, FM, FFM, W&D')
     parser.add_argument('--latent_dims', default=10)
     parser.add_argument('--epoch', type=int, default=1)
     parser.add_argument('--init_lr_a', type=float, default=3e-4)
@@ -426,7 +478,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=10)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 

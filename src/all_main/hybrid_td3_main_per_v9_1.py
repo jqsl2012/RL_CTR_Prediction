@@ -56,6 +56,9 @@ def generate_preds(model_dict, features, actions, prob_weights, c_actions,
     y_preds = torch.ones(size=[len(features), 1]).to(device)
     rewards = torch.ones(size=[len(features), 1]).to(device)
 
+    if mode == 'test':
+        print(c_actions)
+
     sort_prob_weights, sortindex_prob_weights = torch.sort(-prob_weights, dim=1)
 
     pretrain_model_len = len(model_dict)  # 有多少个预训练模型
@@ -368,18 +371,18 @@ def main(data_path, dataset_name, campaign_id, latent_dims, model_name,
 
                     # if i >= batch_size * 2000:
                     # #     if i <= (train_lens // batch_size) - 100:
-                    # if i // batch_size == 1000:
-                    #     auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
-                    #                                                               test_file, test_lens,
-                    #                                                               device)
-                    #     print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
-                    #     rewards_records.append(test_rewards)
-                    #     timesteps.append(i * batch_size)
-                    #     valid_aucs.append(auc)
-                    #
-                    #     torch.cuda.empty_cache()
+                    if i // batch_size == 1000:
+                        auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
+                                                                                  test_file, test_lens,
+                                                                                  device)
+                        print('timesteps', i, 'test_auc', auc, 'test_rewards', test_rewards)
+                        rewards_records.append(test_rewards)
+                        timesteps.append(i * batch_size)
+                        valid_aucs.append(auc)
 
-                    if (i // batch_size) % 5000 == 0:
+                        torch.cuda.empty_cache()
+
+                    elif (i // batch_size) % 5000 == 0:
                         # torch.save(rl_model.Hybrid_Actor.state_dict(),
                         #            save_param_dir + campaign_id + model_name + '/' + str(i // batch_size) + '_' + '.pth')
                         auc, predicts, test_rewards, actions, prob_weights = test(rl_model, model_dict, embedding_layer,
@@ -472,7 +475,7 @@ if __name__ == '__main__':
     parser.add_argument('--end_exploration_rate', type=float, default=0.1)
     parser.add_argument('--weight_decay', type=float, default=1e-5)
     parser.add_argument('--early_stop_type', default='auc', help='auc, loss')
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--device', default='cuda:0')
     parser.add_argument('--save_param_dir', default='../models/model_params/')
 
